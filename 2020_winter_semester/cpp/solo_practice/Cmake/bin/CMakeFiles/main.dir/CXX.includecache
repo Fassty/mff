@@ -1,0 +1,16 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../include/world.hpp
+
+/home/fassty/Devel/programming/c++/solo_practice/Cmake/src/world.cpp
+world.hpp
+/home/fassty/Devel/programming/c++/solo_practice/Cmake/src/world.hpp
+iostream
+-
+

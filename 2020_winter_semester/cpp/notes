@@ -1,0 +1,26 @@
+#include <cctype>
+	- funkce isalpha(c), isdigit, isalnum...
+	- rychlejsi nez rucni porovnavani
+
+#include <string>
+	- stoi(const string& s) -> string to int
+	- stol, stoul, stoll, stof... do jinych typu
+
+! Neodecitat znaky pomoci kodu... muze byt jine kodovani !
+
+Delkarace trid v souboru *.h
+	- na konci deklarace tridy ;
+	- potom se hodi jako include *.hpp v uvozovkach
+	- telo funkce se napise az v *.cpp souboru
+
+	class Pocitatlo{
+	public:
+		Pocitadlo(void)
+			: pocet_(0), ve_slove_(false) {} // inicializace datovych polozek
+		int pocet_pismen(void);
+	private:
+		int pocet_;
+		bool ve_slove_;
+	};
+
+Kdyz je nalevo Typ -> ctyrtecka (::), kdyz je tam instance pak jenom tecka (.)

@@ -1,0 +1,15 @@
+moodle: 19bNPRG005x08
+
+	klauzule
+     |
+smrtelny(sokrates) :- clovek(sokrates)
+	|					|
+   hlava			  telo
+
+muz(emil).
+	-> true kdyz je emil muz a existuje
+muz(X).
+	-> vraci vsechny muze postupne, strednikem se posouvam
+
+miluje(X, emil).
+	-> vsichni co milujou emila

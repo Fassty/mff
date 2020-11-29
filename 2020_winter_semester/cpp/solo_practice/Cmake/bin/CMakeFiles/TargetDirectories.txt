@@ -1,0 +1,3 @@
+/home/fassty/Devel/programming/c++/solo_practice/Cmake/bin/CMakeFiles/rebuild_cache.dir
+/home/fassty/Devel/programming/c++/solo_practice/Cmake/bin/CMakeFiles/edit_cache.dir
+/home/fassty/Devel/programming/c++/solo_practice/Cmake/bin/CMakeFiles/main.dir
