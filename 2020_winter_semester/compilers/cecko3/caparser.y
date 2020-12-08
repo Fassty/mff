@@ -99,6 +99,7 @@ using namespace casem;
 %type<casem::Declarator> declarator init_declarator direct_declarator array_declarator function_declarator
 %type<std::vector<casem::DeclarationSpecifier>> declaration_specifiers
 %type<std::vector<casem::Declarator>> init_declarator_list
+%type<casem::Pointer> type_qualifier_ptr pointer type_qualifier_list
 
 %%
 
@@ -287,9 +288,11 @@ enumerator: enumeration_constant
 type_qualifier: CONST { $$ = casem::DeclarationSpecifier(false, true); }
               ;
 
+type_qualifier_ptr: CONST { $$ = casem::Pointer(1, true); }
+
 
 declarator: pointer direct_declarator {
-            $2.is_pointer = true;
+            $2.pointer = $1;
             $$ = $2;
           }
           | direct_declarator { $$ = $1; }
@@ -297,8 +300,8 @@ declarator: pointer direct_declarator {
 
 direct_declarator: IDF { $$ = casem::Declarator($1, @1); }
                  | LPAR declarator RPAR { $$ = $2; }
-                 | array_declarator { $$ = casem::Declarator(true, true); }
-                 | function_declarator { $$ = casem::Declarator(true, true); }
+                 | array_declarator { $$ = casem::Declarator("", 0); }
+                 | function_declarator { $$ = casem::Declarator("", 0); }
                  ;
 
 array_declarator: direct_declarator LBRA assignment_expression RBRA
@@ -307,18 +310,25 @@ array_declarator: direct_declarator LBRA assignment_expression RBRA
 function_declarator: direct_declarator LPAR parameter_type_list RPAR
                    ;
 
-pointer: STAR type_qualifier_list_opt
-       | STAR type_qualifier_list_opt pointer
+pointer: STAR { $$ = casem::Pointer(1, false); }
+       | STAR type_qualifier_list {
+            $$ = $2;
+       }
+       | STAR pointer {
+            $2.depth += 1;
+            $$ = $2;
+       }
+       | STAR type_qualifier_list pointer {
+            $3.depth += 1;
+            $3.is_const = true;
+            $$ = $3;
+       }
        ;
 
 
-type_qualifier_list: type_qualifier
-                   | type_qualifier_list type_qualifier
+type_qualifier_list: type_qualifier_ptr { $$ = $1; }
+                   | type_qualifier_list type_qualifier_ptr { $$ = $2; }
                    ;
-
-type_qualifier_list_opt: type_qualifier_list
-                       | %empty
-                       ;
 
 parameter_type_list: parameter_list
                    ;

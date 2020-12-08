@@ -31,41 +31,23 @@ namespace casem {
 
         target = cecko::CKTypeRefPack(type, is_const);
 
-        is_const = false;
-        cecko::CIName name;
-        cecko::loc_t line;
-        cecko::CKTypeRefPack temp_ref_pack = target;
+        cecko::CKTypeRefPack temp_ref_pack;
         for (int i = decls.size() - 1; i >= 0; --i) {
-            if (decls[i].is_const)
-                is_const = true;
-            if (decls[i].is_pointer) {
-                auto ptr_t = ctx->get_pointer_type(temp_ref_pack);
-                temp_ref_pack = cecko::CKTypeRefPack(ptr_t, is_const || target.is_const);
-            }
+            temp_ref_pack = target;
 
-            if (name == "") {
-                name = decls[i].name;
-                line = decls[i].line;
-                continue;
+            if (decls[i].pointer.depth > 0) {
+                for (int j = 0; j < decls[i].pointer.depth; ++j) {
+                    auto ptr_t = ctx->get_pointer_type(temp_ref_pack);
+                    temp_ref_pack = cecko::CKTypeRefPack(ptr_t, decls[i].pointer.is_const || target.is_const);
+                }
             }
 
             if (is_typedef) {
 
             } else {
-                ctx->define_var(name, temp_ref_pack, line);
+                ctx->define_var(decls[i].name, temp_ref_pack, decls[i].line);
             }
 
-            name = decls[i].name;
-            line = decls[i].line;
-
-            is_const = false;
-            temp_ref_pack = target;
-        }
-
-        if (is_typedef) {
-            // TODO: panic
-        } else {
-            ctx->define_var(name, temp_ref_pack, line);
         }
    }
 
