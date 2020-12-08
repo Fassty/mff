@@ -96,10 +96,13 @@ using namespace casem;
 
 %type<cecko::CKTypeObs> type_specifier typedef_name
 %type<casem::DeclarationSpecifier> declaration_specifier type_specifier_qualifier storage_class_specifier type_qualifier
-%type<casem::Declarator> declarator init_declarator direct_declarator array_declarator function_declarator
+%type<casem::Declarator> declarator init_declarator direct_declarator array_declarator function_declarator abstract_declarator abstract_declarator_opt direct_abstract_declarator function_abstract_declarator
 %type<std::vector<casem::DeclarationSpecifier>> declaration_specifiers
 %type<std::vector<casem::Declarator>> init_declarator_list
 %type<casem::Pointer> type_qualifier_ptr pointer type_qualifier_list
+%type<casem::ParameterDeclaration> parameter_declaration
+%type<std::vector<casem::ParameterDeclaration>> parameter_list parameter_type_list parameter_type_list_opt
+%type<casem::FunctionHeader> function_header
 
 %%
 
@@ -300,14 +303,18 @@ declarator: pointer direct_declarator {
 
 direct_declarator: IDF { $$ = casem::Declarator($1, @1); }
                  | LPAR declarator RPAR { $$ = $2; }
-                 | array_declarator { $$ = casem::Declarator("", 0); }
-                 | function_declarator { $$ = casem::Declarator("", 0); }
+                 | array_declarator { $$ = $1; }
+                 | function_declarator { $$ = $1; }
                  ;
 
-array_declarator: direct_declarator LBRA assignment_expression RBRA
+array_declarator: direct_declarator LBRA assignment_expression RBRA { $$ = $1; }
                 ;
 
-function_declarator: direct_declarator LPAR parameter_type_list RPAR
+function_declarator: direct_declarator LPAR parameter_type_list_opt RPAR {
+                   $1.is_function = true;
+                   $1.params = casem::process_params($3);
+                   $$ = $1;
+                   }
                    ;
 
 pointer: STAR { $$ = casem::Pointer(1, false); }
@@ -330,36 +337,50 @@ type_qualifier_list: type_qualifier_ptr { $$ = $1; }
                    | type_qualifier_list type_qualifier_ptr { $$ = $2; }
                    ;
 
-parameter_type_list: parameter_list
+parameter_type_list: parameter_list { $$ = $1; }
                    ;
 
-parameter_type_list_opt: parameter_type_list
-                       | %empty
+parameter_type_list_opt: parameter_type_list { $$ = $1; }
+                       | %empty { $$ = std::vector< casem::ParameterDeclaration>(); }
                        ;
 
-parameter_list: parameter_declaration
-              | parameter_list COMMA parameter_declaration
+parameter_list: parameter_declaration {
+                    auto decl = std::vector< casem::ParameterDeclaration>();
+                    decl.push_back($1);
+                    $$ = decl;
+              }
+              | parameter_list COMMA parameter_declaration {
+                    $1.push_back($3);
+                    $$ = $1;
+              }
               ;
 
-parameter_declaration: declaration_specifiers declarator
-                     | declaration_specifiers abstract_declarator_opt
+parameter_declaration: declaration_specifiers declarator { $$ = casem::ParameterDeclaration($1, $2); }
+                     | declaration_specifiers abstract_declarator_opt { $$ = casem::ParameterDeclaration($1, $2); }
                      ;
 
 type_name: specifier_qualifier_list abstract_declarator_opt
          ;
 
-abstract_declarator: pointer
-                   | pointer direct_abstract_declarator
-                   | direct_abstract_declarator
+abstract_declarator: pointer {
+                        auto decl = casem::Declarator("", @1);
+                        decl.pointer = $1;
+                        $$ = decl;
+                   }
+                   | pointer direct_abstract_declarator {
+                        $2.pointer = $1;
+                        $$ = $2;
+                   }
+                   | direct_abstract_declarator { $$ = $1; }
                    ;
 
-abstract_declarator_opt: abstract_declarator
-                       | %empty
+abstract_declarator_opt: abstract_declarator { $$ = $1; }
+                       | %empty { $$ = casem::Declarator(); }
                        ;
 
-direct_abstract_declarator: LPAR abstract_declarator RPAR
-                          | array_abstract_declarator
-                          | function_abstract_declarator
+direct_abstract_declarator: LPAR abstract_declarator RPAR { $$ = $2; }
+                          | array_abstract_declarator { $$ = casem::Declarator(); }
+                          | function_abstract_declarator { $$ = $1; }
                           ;
 
 direct_abstract_declarator_opt: direct_abstract_declarator
@@ -369,15 +390,24 @@ direct_abstract_declarator_opt: direct_abstract_declarator
 array_abstract_declarator: direct_abstract_declarator_opt LBRA assignment_expression RBRA
                          ;
 
-function_abstract_declarator: direct_abstract_declarator LPAR parameter_type_list_opt RPAR
-                            | LPAR parameter_type_list_opt RPAR
+function_abstract_declarator: direct_abstract_declarator LPAR parameter_type_list_opt RPAR {
+                                $1.is_function = true;
+                                $1.params = casem::process_params($3);
+                                $$ = $1;
+                            }
+                            | LPAR parameter_type_list_opt RPAR {
+                                auto decl = casem::Declarator("", @2);
+                                decl.is_function = true;
+                                decl.params = casem::process_params($2);
+                                $$ = decl;
+                            }
                             ;
 
 typedef_name: TYPEIDF { $$ = ctx->find_typedef($1)->get_type_pack().type; }
             ;
 
 statementa: expression_statement
-          | compound_statement
+          | inner_compound_statement
           | selection_statement_a
           | iteration_statement_a
           | jump_statement
@@ -391,8 +421,11 @@ statement: statementa
          | statementb
          ;
 
-compound_statement: LCUR block_item_list_opt RCUR
+compound_statement: LCUR block_item_list_opt { ctx->exit_function(); } RCUR
                   ;
+
+inner_compound_statement: { ctx->enter_block(); } LCUR block_item_list_opt { ctx->exit_block(); } RCUR
+                        ;
 
 block_item_list: block_item
                | block_item_list block_item
@@ -437,8 +470,11 @@ external_declaration: function_definition
                     | declaration
                     ;
 
-function_definition: declaration_specifiers declarator compound_statement
+function_definition: function_header { ctx->enter_function($1.ret_type, $1.pack, @1); } compound_statement
                    ;
+
+function_header: declaration_specifiers declarator { $$ = casem::create_function_header(ctx, $1, $2); }
+               ;
 
 /////////////////////////////////
 

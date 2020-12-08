@@ -6,10 +6,22 @@
 #include "ckgrptokens.hpp"
 #include <vector>
 #include <string>
+#include <utility>
 
 
 namespace casem {
 
+    class Pointer {
+        public:
+            int depth;
+            bool is_const;
+
+            Pointer():
+                depth(0), is_const(false) {}
+
+            Pointer(int dpt, bool is_cst):
+                depth(dpt), is_const(is_cst) {}
+    };
 
     class DeclarationSpecifier {
         public:
@@ -27,30 +39,55 @@ namespace casem {
 
     };
 
+    using d_specs = std::vector<DeclarationSpecifier>;
+
     class Declarator {
         public:
-            bool is_const;
-            bool is_pointer;
             cecko::CIName name;
             cecko::loc_t line;
+            Pointer pointer;
+            bool is_function;
+            std::vector< std::pair<std::vector<DeclarationSpecifier>, std::vector<Declarator>>> params;
 
             Declarator() {};
 
-            Declarator(bool is_cst, bool is_ptr):
-                is_const(is_cst), is_pointer(is_ptr), name(), line() {}
-
             Declarator(cecko::CIName n, cecko::loc_t ln):
-                is_const(false), is_pointer(false), name(n), line(ln) {}
+                name(n), line(ln), pointer(), is_function(false), params() {}
 
     };
 
-    using d_specs = std::vector<DeclarationSpecifier>;
     using decls = std::vector<Declarator>;
+
+    class ParameterDeclaration {
+        public:
+            d_specs f_specs;
+            decls f_decls;
+
+            ParameterDeclaration():
+                f_specs(), f_decls() {}
+
+            ParameterDeclaration(d_specs fs, Declarator decl):
+                f_specs(fs), f_decls(decls(1, decl)) {}
+    };
+
+    class FunctionHeader {
+        public:
+            cecko::CKFunctionSafeObs ret_type;
+            cecko::CKFunctionFormalPackArray pack;
+
+            FunctionHeader() {};
+
+            FunctionHeader(cecko::CKFunctionSafeObs rt, cecko::CKFunctionFormalPackArray pck):
+                ret_type(rt), pack(pck) {}
+    };
+
+    FunctionHeader create_function_header(cecko::context_obs ctx, d_specs scs, Declarator decl);
 
     cecko::CKTypeObs get_etype(cecko::gt_etype enum_t, cecko::context_obs ctx);
 
     void create_declarations(cecko::context_obs ctx, d_specs scs, decls dcs);
 
+    std::vector< std::pair<d_specs, decls>> process_params(std::vector<ParameterDeclaration> params);
 }
 
 #endif
