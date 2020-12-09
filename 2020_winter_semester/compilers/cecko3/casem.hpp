@@ -22,6 +22,44 @@ namespace casem {
                 is_const(is_cst) {}
     };
 
+    class Array {
+        public:
+            int size;
+
+            Array():
+                size(0) {}
+
+            Array(int size):
+                size(size) {}
+    };
+
+    class Enum {
+        public:
+            cecko::CIName name;
+            cecko::loc_t line;
+            int value;
+
+            Enum():
+                value(-1) {}
+
+            Enum(cecko::CIName n, cecko::loc_t l):
+                name(n), line(l), value(-1) {}
+
+            Enum(cecko::CIName n, cecko::loc_t l, int value):
+                name(n), line(l), value(value) {}
+    };
+
+    class EnumHead {
+        public:
+            cecko::CIName name;
+            cecko::loc_t line;
+
+            EnumHead() {}
+
+            EnumHead(cecko::CIName n, cecko::loc_t l):
+                name(n), line(l) {}
+    };
+
     class DeclarationSpecifier {
         public:
             bool is_const;
@@ -45,6 +83,7 @@ namespace casem {
             cecko::CIName name;
             cecko::loc_t line;
             std::vector<Pointer> pointers;
+            std::vector<Array> arrays;
             bool is_function;
             std::vector< std::pair<std::vector<DeclarationSpecifier>, std::vector<Declarator>>> params;
 
@@ -88,6 +127,8 @@ namespace casem {
     void create_declarations(cecko::context_obs ctx, d_specs scs, decls dcs);
 
     std::vector< std::pair<d_specs, decls>> process_params(std::vector<ParameterDeclaration> params);
+
+    DeclarationSpecifier create_enum(cecko::context_obs ctx, cecko::CIName name, cecko::loc_t line, std::vector<Enum> enums);
 }
 
 #endif

@@ -95,14 +95,19 @@ using namespace casem;
 /////////////////////////////////
 
 %type<cecko::CKTypeObs> type_specifier typedef_name
-%type<casem::DeclarationSpecifier> declaration_specifier type_specifier_qualifier storage_class_specifier type_qualifier
-%type<casem::Declarator> declarator init_declarator direct_declarator array_declarator function_declarator abstract_declarator abstract_declarator_opt direct_abstract_declarator function_abstract_declarator
+%type<casem::DeclarationSpecifier> declaration_specifier type_specifier_qualifier storage_class_specifier type_qualifier enum_specifier
+%type<casem::Declarator> declarator init_declarator direct_declarator function_declarator abstract_declarator abstract_declarator_opt direct_abstract_declarator function_abstract_declarator
 %type<std::vector<casem::DeclarationSpecifier>> declaration_specifiers
 %type<std::vector<casem::Declarator>> init_declarator_list
 %type<std::vector<casem::Pointer>> pointer
 %type<casem::ParameterDeclaration> parameter_declaration
 %type<std::vector<casem::ParameterDeclaration>> parameter_list parameter_type_list parameter_type_list_opt
 %type<casem::FunctionHeader> function_header
+%type<casem::Array> array
+%type<std::vector<casem::Array>> arrays
+%type<casem::Enum> enumerator
+%type<std::vector<casem::Enum>> enumerator_list
+%type<casem::EnumHead> enum_head
 
 %%
 
@@ -185,9 +190,6 @@ expression_opt: expression
               | %empty
               ;
 
-constant_expression: logical_OR_expression
-                   ;
-
 declaration: no_leading_attribute_declaration
            ;
 
@@ -235,7 +237,7 @@ storage_class_specifier: TYPEDEF { $$ = casem::DeclarationSpecifier(true, false)
 type_specifier: VOID { $$ = ctx->get_void_type(); }
               | ETYPE { $$ = casem::get_etype($1, ctx); }
               | struct_or_union_specifier { $$ = ctx->get_void_type(); }
-              | enum_specifier { $$ = ctx->get_void_type(); }
+              | enum_specifier { $$ = $1.type; }
               | typedef_name { $$ = $1; }
               ;
 
@@ -272,20 +274,30 @@ type_specifier_qualifier: type_specifier { $$ = casem::DeclarationSpecifier($1);
 member_declarator: declarator
                  ;
 
-enum_specifier: ENUM IDF LCUR enumerator_list RCUR
-              | ENUM IDF LCUR enumerator_list COMMA RCUR
-              | ENUM IDF
+enum_head: ENUM IDF {
+            ctx->define_enum_type_open($2, @2);
+            $$ = casem::EnumHead($2, @2);
+         }
+         ;
+
+enum_specifier: enum_head LCUR enumerator_list RCUR { $$ = casem::create_enum(ctx, $1.name, $1.line, $3); }
+              | enum_head LCUR enumerator_list COMMA RCUR { $$ = casem::create_enum(ctx, $1.name, $1.line, $3); }
+              | ENUM IDF { $$ = casem::DeclarationSpecifier(ctx->declare_enum_type($2, @2)); }
               ;
 
-enumerator_list: enumerator
-               | enumerator_list COMMA enumerator
+enumerator_list: enumerator {
+                auto enums = std::vector<Enum>();
+                enums.push_back($1);
+                $$ = enums;
+               }
+               | enumerator_list COMMA enumerator {
+                $1.push_back($3);
+                $$ = $1;
+               }
                ;
 
-enumeration_constant: IDF
-                    ;
-
-enumerator: enumeration_constant
-          | enumeration_constant ASGN constant_expression
+enumerator: IDF { $$ = casem::Enum($1, @1); }
+          | IDF ASGN INTLIT { $$ = casem::Enum($1, @1, $3); }
           ;
 
 type_qualifier: CONST { $$ = casem::DeclarationSpecifier(false, true); }
@@ -303,12 +315,28 @@ declarator: pointer direct_declarator {
 
 direct_declarator: IDF { $$ = casem::Declarator($1, @1); }
                  | LPAR declarator RPAR { $$ = $2; }
-                 | array_declarator { $$ = $1; }
+                 | IDF arrays {
+                    auto decl = casem::Declarator($1, @1);
+                    decl.arrays = $2;
+                    $$ = decl;
+                 }
                  | function_declarator { $$ = $1; }
                  ;
 
-array_declarator: direct_declarator LBRA assignment_expression RBRA { $$ = $1; }
-                ;
+array: LBRA INTLIT RBRA { $$ = casem::Array($2); }
+     ;
+
+arrays: array {
+        auto arrs = std::vector<casem::Array>();
+        arrs.insert(arrs.begin(), $1);
+        $$ = arrs;
+      }
+      | arrays array {
+        $1.insert($1.begin(), $2);
+        $$ = $1;
+      }
+      ;
+
 
 function_declarator: direct_declarator LPAR parameter_type_list_opt RPAR {
                    $1.is_function = true;

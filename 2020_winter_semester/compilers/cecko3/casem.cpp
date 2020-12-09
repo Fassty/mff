@@ -115,14 +115,18 @@ namespace casem {
                 fn_params = type_arr;
             }
 
+            for (auto && arr : declars[i].arrays) {
+                auto at = ctx->get_array_type(temp_ref_pack.type, ctx->get_int32_constant(arr.size));
+                temp_ref_pack = cecko::CKTypeRefPack(at, false);
+            }
+
             for (auto && ptr : declars[i].pointers) {
                 auto ptr_t = ctx->get_pointer_type(temp_ref_pack);
                 temp_ref_pack = cecko::CKTypeRefPack(ptr_t, ptr.is_const);
             }
 
             if (is_typedef) {
-                // TODO: typedef + error if in function decl
-
+                ctx->define_typedef(declars[i].name, temp_ref_pack, declars[i].line);
             } else {
                 if (declars[i].is_function) {
                     auto f_type = ctx->get_function_type(temp_ref_pack.type, fn_params, false);
@@ -201,7 +205,26 @@ namespace casem {
         return target;
     }
 
+    DeclarationSpecifier create_enum(cecko::context_obs ctx, cecko::CIName name, cecko::loc_t line, std::vector<Enum> enums) {
+        auto e_t = ctx->declare_enum_type(name, line);
+        auto consts = cecko::CKConstantObsVector();
+        int value = 0;
 
+        for (auto && e : enums) {
+            if (e.value == -1) {
+                e.value = value;
+                value++;
+            } else {
+                value = e.value + 1;
+            }
+
+            auto ev = ctx->get_int32_constant(e.value);
+            auto ec = ctx->define_constant(e.name, ev, e.line);
+            consts.push_back(ec);
+        }
+        ctx->define_enum_type_close(e_t, consts);
+        return DeclarationSpecifier(e_t);
+    }
 
 }
 
