@@ -13,14 +13,13 @@ namespace casem {
 
     class Pointer {
         public:
-            int depth;
             bool is_const;
 
             Pointer():
-                depth(0), is_const(false) {}
+                is_const(false) {}
 
-            Pointer(int dpt, bool is_cst):
-                depth(dpt), is_const(is_cst) {}
+            Pointer(bool is_cst):
+                is_const(is_cst) {}
     };
 
     class DeclarationSpecifier {
@@ -45,14 +44,15 @@ namespace casem {
         public:
             cecko::CIName name;
             cecko::loc_t line;
-            Pointer pointer;
+            std::vector<Pointer> pointers;
             bool is_function;
             std::vector< std::pair<std::vector<DeclarationSpecifier>, std::vector<Declarator>>> params;
 
-            Declarator() {};
+            Declarator():
+                is_function(false) {}
 
             Declarator(cecko::CIName n, cecko::loc_t ln):
-                name(n), line(ln), pointer(), is_function(false), params() {}
+                name(n), line(ln), pointers(), is_function(false), params() {}
 
     };
 

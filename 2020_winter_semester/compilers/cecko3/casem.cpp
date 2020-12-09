@@ -14,6 +14,45 @@ namespace casem {
         return NULL;
     }
 
+    cecko::CKTypeObs get_abstract_function_param(cecko::context_obs ctx, cecko::CKTypeObs ret_type, Declarator decl) {
+        cecko::CKTypeObsArray type_arr;
+        for (auto && param : decl.params) {
+            d_specs fn_specs = param.first;
+            std::vector<Declarator> fn_decls = param.second;
+
+            cecko::CKTypeObs p_type;
+            bool p_is_const = false;
+            for (auto && spec : fn_specs) {
+                if (spec.type != NULL)
+                    p_type = spec.type;
+                if (spec.is_const)
+                    p_is_const = true;
+            }
+
+            bool is_function = false;
+            for (auto && dec : fn_decls) {
+                if (dec.is_function) is_function = true;
+                for (auto && ptr : dec.pointers) {
+                   auto rp = cecko::CKTypeRefPack(p_type, ptr.is_const);
+                   p_type = ctx->get_pointer_type(rp);
+                }
+            }
+
+            if (is_function) {
+                p_type = get_abstract_function_param(ctx, p_type, fn_decls[0]);
+                auto rp = cecko::CKTypeRefPack(p_type, false);
+                p_type = ctx->get_pointer_type(rp);
+            }
+
+            if (!p_type->is_void()) {
+                type_arr.push_back(p_type);
+            }
+
+        }
+
+        return ctx->get_function_type(ret_type, type_arr, false);
+    }
+
     void create_declarations(cecko::context_obs ctx, std::vector< DeclarationSpecifier> specs, std::vector< Declarator> declars ) {
         cecko::CKTypeRefPack target;
         bool is_const = false;
@@ -53,28 +92,32 @@ namespace casem {
                             p_is_const = true;
                     }
 
+                    bool is_function = false;
                     for (auto && dec : fn_decls ) {
-                        if (dec.pointer.depth > 0) {
-                            for (int j = 0; j < dec.pointer.depth; ++j) {
-                                auto rp = cecko::CKTypeRefPack(p_type, p_is_const);
-                                p_type = ctx->get_pointer_type(rp);
-                            }
+                        if (dec.is_function) is_function = true;
+                        for (auto && ptr : dec.pointers) {
+                            auto rp = cecko::CKTypeRefPack(p_type, ptr.is_const);
+                            p_type = ctx->get_pointer_type(rp);
                         }
                     }
 
-                    type_arr.push_back(p_type);
+                    if (is_function) {
+                        p_type = get_abstract_function_param(ctx, p_type, fn_decls[0]);
+                        auto rp = cecko::CKTypeRefPack(p_type, false);
+                        p_type = ctx->get_pointer_type(rp);
+                    }
+
+                    if (!p_type->is_void())
+                        type_arr.push_back(p_type);
 
                 }
 
                 fn_params = type_arr;
             }
 
-
-            if (declars[i].pointer.depth > 0) {
-                for (int j = 0; j < declars[i].pointer.depth; ++j) {
-                    auto ptr_t = ctx->get_pointer_type(temp_ref_pack);
-                    temp_ref_pack = cecko::CKTypeRefPack(ptr_t, declars[i].pointer.is_const || target.is_const);
-                }
+            for (auto && ptr : declars[i].pointers) {
+                auto ptr_t = ctx->get_pointer_type(temp_ref_pack);
+                temp_ref_pack = cecko::CKTypeRefPack(ptr_t, ptr.is_const);
             }
 
             if (is_typedef) {
@@ -123,21 +166,22 @@ namespace casem {
             for (auto && dec : param.second) {
                 if (dec.name != "") name = dec.name;
                 if (dec.line > 0) line = dec.line;
-                if (dec.pointer.depth > 0) {
-                    for (int i = 0; i < dec.pointer.depth; ++i) {
-                        auto rp = cecko::CKTypeRefPack(p_type, p_is_const);
-                        p_type = ctx->get_pointer_type(rp);
-                    }
+
+                for (auto && ptr : dec.pointers) {
+                    auto rp = cecko::CKTypeRefPack(p_type, ptr.is_const);
+                    p_type = ctx->get_pointer_type(rp);
                 }
             }
 
-            fn_params.push_back(p_type);
-            pack.push_back(cecko::CKFunctionFormalPack(name, p_is_const, line));
+            if (!p_type->is_void()) {
+                fn_params.push_back(p_type);
+                pack.push_back(cecko::CKFunctionFormalPack(name, p_is_const, line));
+            }
         }
 
-        for (int i = 0; i < decl.pointer.depth; ++i) {
+        for (auto && ptr : decl.pointers) {
             auto ptr_t = ctx->get_pointer_type(trp);
-            trp = cecko::CKTypeRefPack(ptr_t, decl.pointer.is_const || is_const);
+            trp = cecko::CKTypeRefPack(ptr_t, ptr.is_const || is_const);
         }
 
         auto f_type = ctx->get_function_type(trp.type, fn_params, false);

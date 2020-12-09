@@ -99,7 +99,7 @@ using namespace casem;
 %type<casem::Declarator> declarator init_declarator direct_declarator array_declarator function_declarator abstract_declarator abstract_declarator_opt direct_abstract_declarator function_abstract_declarator
 %type<std::vector<casem::DeclarationSpecifier>> declaration_specifiers
 %type<std::vector<casem::Declarator>> init_declarator_list
-%type<casem::Pointer> type_qualifier_ptr pointer type_qualifier_list
+%type<std::vector<casem::Pointer>> pointer
 %type<casem::ParameterDeclaration> parameter_declaration
 %type<std::vector<casem::ParameterDeclaration>> parameter_list parameter_type_list parameter_type_list_opt
 %type<casem::FunctionHeader> function_header
@@ -291,11 +291,11 @@ enumerator: enumeration_constant
 type_qualifier: CONST { $$ = casem::DeclarationSpecifier(false, true); }
               ;
 
-type_qualifier_ptr: CONST { $$ = casem::Pointer(1, true); }
+type_qualifier_ptr: CONST
 
 
 declarator: pointer direct_declarator {
-            $2.pointer = $1;
+            $2.pointers.insert($2.pointers.begin(), $1.begin(), $1.end());
             $$ = $2;
           }
           | direct_declarator { $$ = $1; }
@@ -317,24 +317,29 @@ function_declarator: direct_declarator LPAR parameter_type_list_opt RPAR {
                    }
                    ;
 
-pointer: STAR { $$ = casem::Pointer(1, false); }
+pointer: STAR {
+            auto p_vec = std::vector<Pointer>();
+            p_vec.insert(p_vec.begin(), casem::Pointer(false));
+            $$ = p_vec;
+       }
        | STAR type_qualifier_list {
-            $$ = $2;
+            auto p_vec = std::vector<Pointer>();
+            p_vec.insert(p_vec.begin(), casem::Pointer(true));
+            $$ = p_vec;
        }
        | STAR pointer {
-            $2.depth += 1;
+            $2.insert($2.begin(), casem::Pointer(false));
             $$ = $2;
        }
        | STAR type_qualifier_list pointer {
-            $3.depth += 1;
-            $3.is_const = true;
+            $3.insert($3.begin(), casem::Pointer(true));
             $$ = $3;
        }
        ;
 
 
-type_qualifier_list: type_qualifier_ptr { $$ = $1; }
-                   | type_qualifier_list type_qualifier_ptr { $$ = $2; }
+type_qualifier_list: type_qualifier_ptr
+                   | type_qualifier_list type_qualifier_ptr
                    ;
 
 parameter_type_list: parameter_list { $$ = $1; }
@@ -364,11 +369,11 @@ type_name: specifier_qualifier_list abstract_declarator_opt
 
 abstract_declarator: pointer {
                         auto decl = casem::Declarator("", @1);
-                        decl.pointer = $1;
+                        decl.pointers = $1;
                         $$ = decl;
                    }
                    | pointer direct_abstract_declarator {
-                        $2.pointer = $1;
+                        $2.pointers.insert($2.pointers.begin(), $1.begin(), $1.end());
                         $$ = $2;
                    }
                    | direct_abstract_declarator { $$ = $1; }
@@ -424,7 +429,7 @@ statement: statementa
 compound_statement: LCUR block_item_list_opt { ctx->exit_function(); } RCUR
                   ;
 
-inner_compound_statement: { ctx->enter_block(); } LCUR block_item_list_opt { ctx->exit_block(); } RCUR
+inner_compound_statement: { ctx->enter_block(); } LCUR block_item_list_opt {  } RCUR
                         ;
 
 block_item_list: block_item
