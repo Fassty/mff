@@ -429,7 +429,7 @@ statement: statementa
 compound_statement: LCUR block_item_list_opt { ctx->exit_function(); } RCUR
                   ;
 
-inner_compound_statement: { ctx->enter_block(); } LCUR block_item_list_opt {  } RCUR
+inner_compound_statement: { ctx->enter_block(); } LCUR block_item_list_opt { ctx->exit_block(); } RCUR
                         ;
 
 block_item_list: block_item
