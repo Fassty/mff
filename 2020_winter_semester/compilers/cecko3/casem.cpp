@@ -1,229 +1,157 @@
 #include "casem.hpp"
+#include "ckcontext.hpp"
+#include "cktables.hpp"
 #include <vector>
 #include <string>
 #include <iostream>
 
 namespace casem {
 
-    cecko::CKTypeObs get_etype(cecko::gt_etype enum_t, cecko::context_obs ctx) {
-        switch (enum_t) {
+    cecko::CKTypeObs get_etype(cecko::context_obs ctx, cecko::gt_etype etype) {
+        switch (etype) {
             case cecko::gt_etype::BOOL: return ctx->get_bool_type();
             case cecko::gt_etype::CHAR: return ctx->get_char_type();
             case cecko::gt_etype::INT: return ctx->get_int_type();
+            default: return ctx->get_void_type();
         }
-        return NULL;
     }
 
-    cecko::CKTypeObs get_abstract_function_param(cecko::context_obs ctx, cecko::CKTypeObs ret_type, Declarator decl) {
-        cecko::CKTypeObsArray type_arr;
-        for (auto && param : decl.params) {
-            d_specs fn_specs = param.first;
-            std::vector<Declarator> fn_decls = param.second;
-
-            cecko::CKTypeObs p_type;
-            bool p_is_const = false;
-            for (auto && spec : fn_specs) {
-                if (spec.type != NULL)
-                    p_type = spec.type;
-                if (spec.is_const)
-                    p_is_const = true;
-            }
-
-            bool is_function = false;
-            for (auto && dec : fn_decls) {
-                if (dec.is_function) is_function = true;
-                for (auto && ptr : dec.pointers) {
-                   auto rp = cecko::CKTypeRefPack(p_type, ptr.is_const);
-                   p_type = ctx->get_pointer_type(rp);
-                }
-            }
-
-            if (is_function) {
-                p_type = get_abstract_function_param(ctx, p_type, fn_decls[0]);
-                auto rp = cecko::CKTypeRefPack(p_type, false);
-                p_type = ctx->get_pointer_type(rp);
-            }
-
-            if (!p_type->is_void()) {
-                type_arr.push_back(p_type);
-            }
-
-        }
-
-        return ctx->get_function_type(ret_type, type_arr, false);
-    }
-
-    void create_declarations(cecko::context_obs ctx, std::vector< DeclarationSpecifier> specs, std::vector< Declarator> declars ) {
-        cecko::CKTypeRefPack target;
-        bool is_const = false;
-        bool is_typedef = false;
+    cecko::CKTypeRefPack process_specifiers(DeclarationSpecifierList specifiers) {
         cecko::CKTypeObs type;
+        bool is_const = false;
 
-        for (auto && x : specs) {
-            if (x.is_const)
+        for (auto && specifier : specifiers) {
+            if (specifier.is_const)
                 is_const = true;
-            if (x.is_typedef)
-                is_typedef = true;
-            if (x.type != NULL)
-                type = x.type;
-
-            // TODO: fail if multiple types
+            if (specifier.has_type)
+                type = specifier.type;
         }
 
-        target = cecko::CKTypeRefPack(type, is_const);
+        return cecko::CKTypeRefPack(type, is_const);
+    }
 
-        cecko::CKTypeRefPack temp_ref_pack;
-        cecko::CKTypeObsArray fn_params;
-        for (int i = declars.size() - 1; i >= 0; --i) {
-            temp_ref_pack = target;
+    cecko::CKTypeRefPack wrap_type(cecko::context_obs ctx, cecko::CKTypeRefPack type, DeclaratorWrapperList wrappers) {
+        for (auto && wrapper : wrappers) {
 
-            if (declars[i].is_function) {
-                cecko::CKTypeObsArray type_arr;
-                for (auto && param : declars[i].params) {
-                    d_specs fn_specs = param.first;
-                    std::vector<Declarator> fn_decls = param.second;
+            if (wrapper.is_pointer()) {
+                for (auto && pointer : wrapper.get_pointers()) {
+                    auto pointer_type = ctx->get_pointer_type(type);
+                    type = cecko::CKTypeRefPack(pointer_type, pointer.is_const);
+                }
+            }
 
-                    cecko::CKTypeObs p_type;
-                    bool p_is_const = false;
-                    for (auto && spec : fn_specs) {
-                        if (spec.type != NULL)
-                            p_type = spec.type;
-                        if (spec.is_const)
-                            p_is_const = true;
-                    }
+            if (wrapper.is_array()) {
+                auto array_type = ctx->get_array_type(type.type, wrapper.get_array_size());
+                type = cecko::CKTypeRefPack(array_type, false);
+            }
 
-                    bool is_function = false;
-                    for (auto && dec : fn_decls ) {
-                        if (dec.is_function) is_function = true;
-                        for (auto && ptr : dec.pointers) {
-                            auto rp = cecko::CKTypeRefPack(p_type, ptr.is_const);
-                            p_type = ctx->get_pointer_type(rp);
+            if (wrapper.is_function()) {
+                cecko::CKTypeObsArray function_parameters;
+                for (auto && parameter : wrapper.get_function_parameters()) {
+                    auto parameter_type = process_specifiers(parameter.specifiers);
+
+                    if (parameter.declarators.size() > 0) {
+                        for (auto && declarator : parameter.declarators) {
+                            parameter_type = wrap_type(ctx, parameter_type, declarator.get_wrappers());
+                            function_parameters.push_back(parameter_type.type);
                         }
+                    } else if (!parameter_type.type->is_void()) {
+                        function_parameters.push_back(parameter_type.type);
                     }
-
-                    if (is_function) {
-                        p_type = get_abstract_function_param(ctx, p_type, fn_decls[0]);
-                        auto rp = cecko::CKTypeRefPack(p_type, false);
-                        p_type = ctx->get_pointer_type(rp);
-                    }
-
-                    if (!p_type->is_void())
-                        type_arr.push_back(p_type);
-
                 }
 
-                fn_params = type_arr;
+                auto function_type = ctx->get_function_type(type.type, function_parameters);
+                type = cecko::CKTypeRefPack(function_type, false);
             }
 
-            for (auto && arr : declars[i].arrays) {
-                auto at = ctx->get_array_type(temp_ref_pack.type, ctx->get_int32_constant(arr.size));
-                temp_ref_pack = cecko::CKTypeRefPack(at, false);
-            }
+        }
 
-            for (auto && ptr : declars[i].pointers) {
-                auto ptr_t = ctx->get_pointer_type(temp_ref_pack);
-                temp_ref_pack = cecko::CKTypeRefPack(ptr_t, ptr.is_const);
-            }
+        return type;
+    }
+
+    void process_declarators(cecko::context_obs ctx, DeclaratorList declarators, cecko::CKTypeRefPack specified_type, bool is_typedef) {
+        cecko::CKTypeRefPack declarator_type = specified_type;
+
+        for (auto && declarator : declarators) {
+            declarator_type = wrap_type(ctx, declarator_type, declarator.get_wrappers());
 
             if (is_typedef) {
-                ctx->define_typedef(declars[i].name, temp_ref_pack, declars[i].line);
+                ctx->define_typedef(declarator.name, declarator_type, declarator.line);
+                continue;
+            }
+
+            if (declarator_type.type->is_function()) {
+                ctx->declare_function(declarator.name, declarator_type.type, declarator.line);
             } else {
-                if (declars[i].is_function) {
-                    auto f_type = ctx->get_function_type(temp_ref_pack.type, fn_params, false);
-                    ctx->declare_function(declars[i].name, f_type, declars[i].line);
-                } else {
-                    ctx->define_var(declars[i].name, temp_ref_pack, declars[i].line);
-                }
+                ctx->define_var(declarator.name, declarator_type, declarator.line);
             }
-
         }
     }
 
-    FunctionHeader create_function_header(cecko::context_obs ctx, d_specs scs, Declarator decl) {
-        bool is_const = false;
-        bool is_typedef = false;
-        cecko::CKTypeObs ret_type;
+    void create_declarations(cecko::context_obs ctx, DeclarationSpecifierList specifiers, DeclaratorList declarators) {
+        cecko::CKTypeRefPack specified_type = process_specifiers(specifiers);
 
-        for (auto && x : scs) {
-            if (x.is_const)
-                is_const = true;
-            if (x.is_typedef)
-                is_typedef = true;
-            if (x.type != NULL)
-                ret_type = x.type;
-        }
-
-        cecko::CKTypeRefPack trp = cecko::CKTypeRefPack(ret_type, is_const);
-        cecko::CKTypeObsArray fn_params;
-        cecko::CKFunctionFormalPackArray pack;
-        for (auto && param : decl.params) {
-            cecko::CKTypeObs p_type;
-            cecko::CIName name;
-            cecko::loc_t line = 0;
-            bool p_is_const = false;
-
-            for (auto && spec : param.first) {
-                if (spec.is_const) p_is_const = true;
-                if (spec.type != NULL) p_type = spec.type;
-            }
-
-            for (auto && dec : param.second) {
-                if (dec.name != "") name = dec.name;
-                if (dec.line > 0) line = dec.line;
-
-                for (auto && ptr : dec.pointers) {
-                    auto rp = cecko::CKTypeRefPack(p_type, ptr.is_const);
-                    p_type = ctx->get_pointer_type(rp);
-                }
-            }
-
-            if (!p_type->is_void()) {
-                fn_params.push_back(p_type);
-                pack.push_back(cecko::CKFunctionFormalPack(name, p_is_const, line));
-            }
-        }
-
-        for (auto && ptr : decl.pointers) {
-            auto ptr_t = ctx->get_pointer_type(trp);
-            trp = cecko::CKTypeRefPack(ptr_t, ptr.is_const || is_const);
-        }
-
-        auto f_type = ctx->get_function_type(trp.type, fn_params, false);
-        cecko::CKFunctionSafeObs rt = ctx->declare_function(decl.name, f_type, decl.line);
-
-        return FunctionHeader(rt, pack);
+        process_declarators(ctx, declarators, specified_type, specifiers.back().is_typedef);
     }
 
+    void create_function_declaration(cecko::context_obs ctx, DeclarationSpecifierList specifiers, Declarator declarator) {
+        cecko::CKTypeRefPack specified_type = process_specifiers(specifiers);
 
-    std::vector< std::pair<d_specs, decls>> process_params(std::vector<ParameterDeclaration> params) {
-        std::vector< std::pair<d_specs, decls>> target;
+        cecko::CKTypeRefPack declarator_type = wrap_type(ctx, specified_type, declarator.get_wrappers());
 
-        for (auto && x : params) {
-            target.push_back(std::make_pair(x.f_specs, x.f_decls));
+        if (!declarator_type.type->is_function())
+            return;
+
+        auto function_declaration = ctx->declare_function(declarator.name, declarator_type.type, declarator.line);
+
+        cecko::CKFunctionFormalPackArray formal_parameters;
+        for (auto && function_parameter : declarator.get_wrappers().back().get_function_parameters()) {
+            if (!function_parameter.specifiers.front().type->is_void())
+                formal_parameters.emplace_back(function_parameter.declarators.front().name, function_parameter.specifiers.front().is_const, declarator.line);
         }
 
-        return target;
+        ctx->enter_function(function_declaration, formal_parameters, declarator.line);
     }
 
-    DeclarationSpecifier create_enum(cecko::context_obs ctx, cecko::CIName name, cecko::loc_t line, std::vector<Enum> enums) {
-        auto e_t = ctx->declare_enum_type(name, line);
-        auto consts = cecko::CKConstantObsVector();
-        int value = 0;
+    cecko::CKTypeObs create_enum(cecko::context_obs ctx, cecko::CIName name, cecko::loc_t line, EnumList enums) {
+        auto enum_type = ctx->declare_enum_type(name, line);
+        ctx->define_enum_type_open(name, line);
 
-        for (auto && e : enums) {
-            if (e.value == -1) {
-                e.value = value;
-                value++;
+        auto items = cecko::CKConstantObsVector();
+        int current_value = 0;
+
+        for (auto && enumerator : enums) {
+            if (enumerator.value == -1) {
+                enumerator.value = current_value;
+                current_value++;
             } else {
-                value = e.value + 1;
+                current_value = enumerator.value + 1;
             }
 
-            auto ev = ctx->get_int32_constant(e.value);
-            auto ec = ctx->define_constant(e.name, ev, e.line);
-            consts.push_back(ec);
+            auto enumeration_constant = ctx->define_constant(
+                    enumerator.name,
+                    ctx->get_int32_constant(enumerator.value),
+                    enumerator.line
+            );
+
+            items.push_back(enumeration_constant);
         }
-        ctx->define_enum_type_close(e_t, consts);
-        return DeclarationSpecifier(e_t);
+
+        ctx->define_enum_type_close(enum_type, items);
+        return enum_type;
+    }
+
+    cecko::CKStructItemArray process_member(cecko::context_obs ctx, DeclarationSpecifierList specifiers, DeclaratorList declarators) {
+            cecko::CKTypeRefPack specified_type = process_specifiers(specifiers);
+            auto items = cecko::CKStructItemArray();
+
+            for (auto && declarator : declarators) {
+                cecko::CKTypeRefPack declarator_type = wrap_type(ctx, specified_type, declarator.get_wrappers());
+                auto struct_item = cecko::CKStructItem(declarator_type, declarator.name, declarator.line);
+                items.insert(items.begin(), struct_item);
+            }
+
+            return items;
     }
 
 }

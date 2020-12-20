@@ -25,9 +25,6 @@
 #include "ckgrptokens.hpp"
 #include "ckcontext.hpp"
 #include "casem.hpp"
-#include <vector>
-#include <string>
-#include <iostream>
 }
 
 %code
@@ -92,26 +89,37 @@ using namespace casem;
 %token<int>					INTLIT		"integer literal"
 %token<CIName>				STRLIT		"string literal"
 
-/////////////////////////////////
+%type<cecko::CKTypeObs> type_specifier enum_specifier struct_or_union_specifier
 
-%type<cecko::CKTypeObs> type_specifier typedef_name
-%type<casem::DeclarationSpecifier> declaration_specifier type_specifier_qualifier storage_class_specifier type_qualifier enum_specifier
-%type<casem::Declarator> declarator init_declarator direct_declarator function_declarator abstract_declarator abstract_declarator_opt direct_abstract_declarator function_abstract_declarator
-%type<std::vector<casem::DeclarationSpecifier>> declaration_specifiers
-%type<std::vector<casem::Declarator>> init_declarator_list
-%type<std::vector<casem::Pointer>> pointer
-%type<casem::ParameterDeclaration> parameter_declaration
-%type<std::vector<casem::ParameterDeclaration>> parameter_list parameter_type_list parameter_type_list_opt
-%type<casem::FunctionHeader> function_header
-%type<casem::Array> array
-%type<std::vector<casem::Array>> arrays
+%type<casem::DeclarationSpecifier> type_specifier_qualifier declaration_specifier
+
+%type<casem::DeclarationSpecifierList> declaration_specifiers specifier_qualifier_list
+
+%type<casem::Declarator> declarator direct_declarator function_declarator array_declarator function_abstract_declarator array_abstract_declarator direct_abstract_declarator abstract_declarator init_declarator member_declarator
+
+%type<casem::DeclaratorList> init_declarator_list_opt init_declarator_list member_declarator_list
+
+%type<casem::PointerList> pointer
+
+%type<casem::ParameterList> parameter_list
+
+%type<casem::Parameter> parameter_declaration
+
 %type<casem::Enum> enumerator
-%type<std::vector<casem::Enum>> enumerator_list
-%type<casem::EnumHead> enum_head
+
+%type<casem::EnumList> enumerator_list
+
+%type<casem::Struct> struct_definition_head
+
+%type<cecko::CKStructItemArray> member_declaration_list member_body member_declaration
+
+/////////////////////////////////
 
 %%
 
 /////////////////////////////////
+
+/* Expressions */
 
 primary_expression: IDF
                   | INTLIT
@@ -190,170 +198,78 @@ expression_opt: expression
               | %empty
               ;
 
-declaration: no_leading_attribute_declaration
+// constant_expression: logical_OR_expression
+//                   ;
+
+
+/* Declarations */
+
+declaration: declaration_body SEMIC
            ;
 
-declaration_body: declaration_specifiers init_declarator_list {
-                    casem::create_declarations(ctx, $1, $2);
-                }
-                | declaration_specifiers
+declaration_body: declaration_specifiers init_declarator_list_opt { casem::create_declarations(ctx, $1, $2); }
                 ;
 
-no_leading_attribute_declaration: declaration_body SEMIC
-
 declaration_specifiers: declaration_specifier {
-                        auto decl = std::vector< casem::DeclarationSpecifier>();
-                        decl.push_back($1);
-                        $$ = decl;
-
+                            auto list = casem::DeclarationSpecifierList();
+                            list.push_back($1);
+                            $$ = list;
                       }
                       | declaration_specifier declaration_specifiers {
-                        $2.push_back($1);
-                        $$ = $2;
+                            $2.push_back($1);
+                            $$ = $2;
                       }
                       ;
 
-declaration_specifier: storage_class_specifier { $$ = $1; }
-                     | type_specifier_qualifier { $$ = $1; }
+declaration_specifier: TYPEDEF { $$ = casem::DeclarationSpecifier(false, true); }
+                     | type_specifier_qualifier
                      ;
 
+init_declarator_list_opt: init_declarator_list
+                        | %empty { $$ = casem::DeclaratorList(); }
+                        ;
+
 init_declarator_list: init_declarator {
-                        auto decl = std::vector< casem::Declarator>();
-                        decl.push_back($1);
-                        $$ = decl;
+                            auto list = casem::DeclaratorList();
+                            list.push_back($1);
+                            $$ = list;
                     }
                     | init_declarator_list COMMA init_declarator {
-                        $1.push_back($3);
-                        $$ = $1;
+                            $1.push_back($3);
+                            $$ = $1;
                     }
                     ;
 
-init_declarator: declarator { $$ = $1; }
+init_declarator: declarator
                ;
-
-storage_class_specifier: TYPEDEF { $$ = casem::DeclarationSpecifier(true, false); }
-                       ;
-
-type_specifier: VOID { $$ = ctx->get_void_type(); }
-              | ETYPE { $$ = casem::get_etype($1, ctx); }
-              | struct_or_union_specifier { $$ = ctx->get_void_type(); }
-              | enum_specifier { $$ = $1.type; }
-              | typedef_name { $$ = $1; }
-              ;
-
-struct_or_union_specifier: struct_or_union IDF LCUR member_declaration_list RCUR
-                         | struct_or_union IDF
-                         ;
-
-struct_or_union: STRUCT
-               ;
-
-member_declaration_list: member_declaration
-                       | member_declaration_list member_declaration
-                       ;
-
-member_declaration: member_body SEMIC
-                  ;
-
-member_body: specifier_qualifier_list
-           | specifier_qualifier_list_with_member_declarators
-           ;
-
-specifier_qualifier_list_with_member_declarators: specifier_qualifier_list member_declarator
-                                               | specifier_qualifier_list_with_member_declarators COMMA member_declarator
-                                               ;
-
-specifier_qualifier_list: type_specifier_qualifier
-                        | type_specifier_qualifier specifier_qualifier_list
-                        ;
 
 type_specifier_qualifier: type_specifier { $$ = casem::DeclarationSpecifier($1); }
-                        | type_qualifier { $$ = $1; }
+                        | CONST { $$ = casem::DeclarationSpecifier(true, false); }
                         ;
 
-member_declarator: declarator
-                 ;
-
-enum_head: ENUM IDF {
-            ctx->define_enum_type_open($2, @2);
-            $$ = casem::EnumHead($2, @2);
-         }
-         ;
-
-enum_specifier: enum_head LCUR enumerator_list RCUR { $$ = casem::create_enum(ctx, $1.name, $1.line, $3); }
-              | enum_head LCUR enumerator_list COMMA RCUR { $$ = casem::create_enum(ctx, $1.name, $1.line, $3); }
-              | ENUM IDF { $$ = casem::DeclarationSpecifier(ctx->declare_enum_type($2, @2)); }
+type_specifier: VOID { $$ = ctx->get_void_type(); }
+              | ETYPE { $$ = casem::get_etype(ctx, $1); }
+              | struct_or_union_specifier
+              | enum_specifier
+              | TYPEIDF { $$ = ctx->find_typedef($1)->get_type_pack().type; }
               ;
-
-enumerator_list: enumerator {
-                auto enums = std::vector<Enum>();
-                enums.push_back($1);
-                $$ = enums;
-               }
-               | enumerator_list COMMA enumerator {
-                $1.push_back($3);
-                $$ = $1;
-               }
-               ;
-
-enumerator: IDF { $$ = casem::Enum($1, @1); }
-          | IDF ASGN INTLIT { $$ = casem::Enum($1, @1, $3); }
-          ;
-
-type_qualifier: CONST { $$ = casem::DeclarationSpecifier(false, true); }
-              ;
-
-type_qualifier_ptr: CONST
-
 
 declarator: pointer direct_declarator {
-            $2.pointers.insert($2.pointers.begin(), $1.begin(), $1.end());
-            $$ = $2;
+                $2.register_wrapper($1);
+                $$ = $2;
           }
-          | direct_declarator { $$ = $1; }
+          | direct_declarator
           ;
 
-direct_declarator: IDF { $$ = casem::Declarator($1, @1); }
-                 | LPAR declarator RPAR { $$ = $2; }
-                 | IDF arrays {
-                    auto decl = casem::Declarator($1, @1);
-                    decl.arrays = $2;
-                    $$ = decl;
-                 }
-                 | function_declarator { $$ = $1; }
-                 ;
-
-array: LBRA INTLIT RBRA { $$ = casem::Array($2); }
-     ;
-
-arrays: array {
-        auto arrs = std::vector<casem::Array>();
-        arrs.insert(arrs.begin(), $1);
-        $$ = arrs;
-      }
-      | arrays array {
-        $1.insert($1.begin(), $2);
-        $$ = $1;
-      }
-      ;
-
-
-function_declarator: direct_declarator LPAR parameter_type_list_opt RPAR {
-                   $1.is_function = true;
-                   $1.params = casem::process_params($3);
-                   $$ = $1;
-                   }
-                   ;
-
 pointer: STAR {
-            auto p_vec = std::vector<Pointer>();
-            p_vec.insert(p_vec.begin(), casem::Pointer(false));
-            $$ = p_vec;
+            auto list = casem::PointerList();
+            list.insert(list.begin(), casem::Pointer(false));
+            $$ = list;
        }
        | STAR type_qualifier_list {
-            auto p_vec = std::vector<Pointer>();
-            p_vec.insert(p_vec.begin(), casem::Pointer(true));
-            $$ = p_vec;
+            auto list = casem::PointerList();
+            list.insert(list.begin(), casem::Pointer(true));
+            $$ = list;
        }
        | STAR pointer {
             $2.insert($2.begin(), casem::Pointer(false));
@@ -365,22 +281,115 @@ pointer: STAR {
        }
        ;
 
+direct_declarator: IDF { $$ = casem::Declarator($1, @1); }
+                 | LPAR declarator RPAR { $$ = $2; }
+                 | array_declarator
+                 | function_declarator
+                 ;
 
-type_qualifier_list: type_qualifier_ptr
-                   | type_qualifier_list type_qualifier_ptr
+array_declarator: direct_declarator LBRA INTLIT RBRA {
+                        $1.register_wrapper(casem::Array(ctx->get_int32_constant($3)));
+                        $$ = $1;
+                }
+                // direct_declarator LBRA assignment_expression RBRA
+                ;
+
+function_declarator: direct_declarator LPAR parameter_list RPAR {
+                        $1.register_wrapper(casem::Function($3));
+                        $$ = $1;
+                   }
                    ;
 
-parameter_type_list: parameter_list { $$ = $1; }
+type_qualifier_list: CONST
+                   | type_qualifier_list CONST
                    ;
 
-parameter_type_list_opt: parameter_type_list { $$ = $1; }
-                       | %empty { $$ = std::vector< casem::ParameterDeclaration>(); }
+/* Structs */
+struct_definition_head: struct_or_union IDF { $$ = casem::Struct($2, ctx->define_struct_type_open($2, @2)); }
+                      ;
+
+struct_or_union_specifier: struct_definition_head LCUR member_declaration_list { ctx->define_struct_type_close($1.type, $3); } RCUR { $$ = $1.type; }
+                         | struct_or_union IDF {
+                                auto s = casem::Struct($2, ctx->declare_struct_type($2, @2));
+                                $$ = s.type;
+                         }
+                         ;
+
+struct_or_union: STRUCT
+               ;
+
+member_declaration_list: member_declaration {
+                            auto list = cecko::CKStructItemArray();
+                            list.insert(list.end(), $1.begin(), $1.end());
+                            $$ = list;
+                       }
+                       | member_declaration_list member_declaration {
+                            $1.insert($1.end(), $2.begin(), $2.end());
+                            $$ = $1;
+                       }
                        ;
 
+member_declaration: member_body SEMIC
+                  ;
+
+member_body: specifier_qualifier_list {}
+           | specifier_qualifier_list member_declarator_list { $$ = casem::process_member(ctx, $1, $2); }
+           ;
+
+member_declarator_list: member_declarator {
+                            auto list = casem::DeclaratorList();
+                            list.push_back($1);
+                            $$ = list;
+                      }
+                      | member_declarator COMMA member_declarator_list {
+                            $3.push_back($1);
+                            $$ = $3;
+                      }
+                      ;
+
+specifier_qualifier_list: type_specifier_qualifier {
+                                auto list = DeclarationSpecifierList();
+                                list.push_back($1);
+                                $$ = list;
+                        }
+                        | type_specifier_qualifier specifier_qualifier_list {
+                                $2.push_back($1);
+                                $$ = $2;
+                        }
+                        ;
+
+member_declarator: declarator
+                 ;
+
+/* Enums */
+
+enum_specifier: ENUM IDF LCUR enumerator_list RCUR { $$ = casem::create_enum(ctx, $2, @2, $4); }
+              | ENUM IDF LCUR enumerator_list COMMA RCUR { $$ = casem::create_enum(ctx, $2, @2, $4); }
+              | ENUM IDF { $$ = ctx->declare_enum_type($2, @2); }
+              ;
+
+enumerator_list: enumerator {
+                    auto list = casem::EnumList();
+                    list.push_back($1);
+                    $$ = list;
+               }
+               | enumerator_list COMMA enumerator {
+                    $1.push_back($3);
+                    $$ = $1;
+               }
+               ;
+
+enumerator: IDF { $$ = casem::Enum($1, @1); }
+          | IDF ASGN INTLIT { $$ = casem::Enum($1, @1, $3); }
+          /*| IDF ASGN constant_expression */
+          ;
+
+/* Functions */
+
 parameter_list: parameter_declaration {
-                    auto decl = std::vector< casem::ParameterDeclaration>();
-                    decl.push_back($1);
-                    $$ = decl;
+                    auto list = casem::ParameterList();
+                    list.push_back($1);
+                    $$ = list;
               }
               | parameter_list COMMA parameter_declaration {
                     $1.push_back($3);
@@ -388,56 +397,66 @@ parameter_list: parameter_declaration {
               }
               ;
 
-parameter_declaration: declaration_specifiers declarator { $$ = casem::ParameterDeclaration($1, $2); }
-                     | declaration_specifiers abstract_declarator_opt { $$ = casem::ParameterDeclaration($1, $2); }
+parameter_declaration: declaration_specifiers { $$ = casem::Parameter($1); }
+                     | declaration_specifiers declarator {
+                            auto list = casem::DeclaratorList();
+                            list.push_back($2);
+                            $$ = casem::Parameter($1, list);
+                     }
+                     | declaration_specifiers abstract_declarator {
+                            auto list = casem::DeclaratorList();
+                            list.push_back($2);
+                            $$ = casem::Parameter($1, list);
+                     }
                      ;
 
 type_name: specifier_qualifier_list abstract_declarator_opt
          ;
 
 abstract_declarator: pointer {
-                        auto decl = casem::Declarator("", @1);
-                        decl.pointers = $1;
-                        $$ = decl;
+                        auto declarator = casem::Declarator();
+                        declarator.register_wrapper($1);
+                        $$ = declarator;
                    }
+                   | direct_abstract_declarator
                    | pointer direct_abstract_declarator {
-                        $2.pointers.insert($2.pointers.begin(), $1.begin(), $1.end());
+                        $2.register_wrapper($1);
                         $$ = $2;
                    }
-                   | direct_abstract_declarator { $$ = $1; }
                    ;
 
-abstract_declarator_opt: abstract_declarator { $$ = $1; }
-                       | %empty { $$ = casem::Declarator(); }
+abstract_declarator_opt: abstract_declarator
+                       | %empty
                        ;
 
-direct_abstract_declarator: LPAR abstract_declarator RPAR { $$ = $2; }
-                          | array_abstract_declarator { $$ = casem::Declarator(); }
-                          | function_abstract_declarator { $$ = $1; }
+direct_abstract_declarator: LPAR abstract_declarator RPAR { $$ = casem::Declarator($2); }
+                          | array_abstract_declarator
+                          | function_abstract_declarator
                           ;
 
-direct_abstract_declarator_opt: direct_abstract_declarator
-                              | %empty
-                              ;
-
-array_abstract_declarator: direct_abstract_declarator_opt LBRA assignment_expression RBRA
+array_abstract_declarator: LBRA INTLIT RBRA {
+                                auto declarator = casem::Declarator();
+                                declarator.register_wrapper(casem::Array(ctx->get_int32_constant($2)));
+                                $$ = declarator;
+                         }
+                         | direct_abstract_declarator LBRA INTLIT RBRA {
+                                $1.register_wrapper(casem::Array(ctx->get_int32_constant($3)));
+                                $$ = $1;
+                         }
                          ;
 
-function_abstract_declarator: direct_abstract_declarator LPAR parameter_type_list_opt RPAR {
-                                $1.is_function = true;
-                                $1.params = casem::process_params($3);
+function_abstract_declarator: direct_abstract_declarator LPAR parameter_list RPAR {
+                                $1.register_wrapper(casem::Function($3));
                                 $$ = $1;
                             }
-                            | LPAR parameter_type_list_opt RPAR {
-                                auto decl = casem::Declarator("", @2);
-                                decl.is_function = true;
-                                decl.params = casem::process_params($2);
-                                $$ = decl;
+                            | LPAR parameter_list RPAR {
+                                auto declarator = casem::Declarator();
+                                declarator.register_wrapper(casem::Function($2));
+                                $$ = declarator;
                             }
                             ;
 
-typedef_name: TYPEIDF { $$ = ctx->find_typedef($1)->get_type_pack().type; }
-            ;
+/* Statements */
 
 statementa: expression_statement
           | inner_compound_statement
@@ -503,11 +522,11 @@ external_declaration: function_definition
                     | declaration
                     ;
 
-function_definition: function_header { ctx->enter_function($1.ret_type, $1.pack, @1); } compound_statement
-                   ;
+function_head: declaration_specifiers declarator { casem::create_function_declaration(ctx, $1, $2); }
+             ;
 
-function_header: declaration_specifiers declarator { $$ = casem::create_function_header(ctx, $1, $2); }
-               ;
+function_definition: function_head compound_statement
+                   ;
 
 /////////////////////////////////
 
@@ -521,3 +540,4 @@ namespace cecko {
 	}
 
 }
+

@@ -1,6 +1,7 @@
 #ifndef casem_hpp_
 #define casem_hpp_
 
+#include "ckir.hpp"
 #include "cktables.hpp"
 #include "ckcontext.hpp"
 #include "ckgrptokens.hpp"
@@ -11,6 +12,47 @@
 
 namespace casem {
 
+    class DeclarationSpecifier;
+    class Pointer;
+    class Array;
+    class Enum;
+    class Function;
+    class Struct;
+    class Parameter;
+    class DeclaratorWrapper;
+    class Declarator;
+
+    using ParameterList = std::vector<Parameter>;
+    using DeclarationSpecifierList = std::vector<DeclarationSpecifier>;
+    using DeclaratorWrapperList = std::vector<DeclaratorWrapper>;
+    using DeclaratorList = std::vector<Declarator>;
+    using PointerList = std::vector<Pointer>;
+    using EnumList = std::vector<Enum>;
+
+
+    enum WrapperKind {
+        FUNCTION,
+        ARRAY,
+        POINTERS,
+    };
+
+    class DeclarationSpecifier {
+        public:
+            cecko::CKTypeObs type;
+            bool is_const;
+            bool is_typedef;
+            bool has_type;
+
+            DeclarationSpecifier():
+                type(cecko::CKTypeObs()), is_const(false), is_typedef(false), has_type(false) {}
+
+            DeclarationSpecifier(bool is_const, bool is_typedef):
+                type(cecko::CKTypeObs()), is_const(is_const), is_typedef(is_typedef), has_type(false) {}
+
+            DeclarationSpecifier(cecko::CKTypeObs type):
+                type(type), is_const(false), is_typedef(false), has_type(true) {}
+    };
+
     class Pointer {
         public:
             bool is_const;
@@ -18,19 +60,20 @@ namespace casem {
             Pointer():
                 is_const(false) {}
 
-            Pointer(bool is_cst):
-                is_const(is_cst) {}
+            Pointer(bool is_const):
+                is_const(is_const) {}
     };
 
     class Array {
         public:
-            int size;
+            cecko::CKIRConstantIntObs size;
 
             Array():
                 size(0) {}
 
-            Array(int size):
+            Array(cecko::CKIRConstantIntObs size):
                 size(size) {}
+
     };
 
     class Enum {
@@ -42,93 +85,123 @@ namespace casem {
             Enum():
                 value(-1) {}
 
-            Enum(cecko::CIName n, cecko::loc_t l):
-                name(n), line(l), value(-1) {}
+            Enum(cecko::CIName name, cecko::loc_t line):
+                name(name), line(line), value(-1) {}
 
-            Enum(cecko::CIName n, cecko::loc_t l, int value):
-                name(n), line(l), value(value) {}
+            Enum(cecko::CIName name, cecko::loc_t line, int value):
+                name(name), line(line), value(value) {}
+
     };
 
-    class EnumHead {
+    class Function {
+        public:
+            ParameterList parameters;
+
+
+            Function() {}
+
+            Function(ParameterList parameters):
+                parameters(parameters) {}
+
+    };
+
+    class Struct {
         public:
             cecko::CIName name;
-            cecko::loc_t line;
+            cecko::CKStructTypeObs type;
 
-            EnumHead() {}
+            Struct() {}
 
-            EnumHead(cecko::CIName n, cecko::loc_t l):
-                name(n), line(l) {}
+            Struct(cecko::CIName name, cecko::CKStructTypeObs type):
+                name(name), type(type) {}
+
     };
 
-    class DeclarationSpecifier {
+    class DeclaratorWrapper {
         public:
-            bool is_const;
-            bool is_typedef;
-            cecko::CKTypeObs type;
+            WrapperKind kind;
+            PointerList pointers;
+            Array array;
+            Function function;
 
-            DeclarationSpecifier() {};
+            DeclaratorWrapper() {}
 
-            DeclarationSpecifier(bool is_tdf, bool is_cst):
-                is_typedef(is_tdf), is_const(is_cst), type() {}
+            DeclaratorWrapper(PointerList pointers):
+                kind(WrapperKind::POINTERS), pointers(pointers) {}
 
-            DeclarationSpecifier(cecko::CKTypeObs tpc):
-                is_typedef(false), is_const(false), type(tpc) {}
+            DeclaratorWrapper(Array array):
+                kind(WrapperKind::ARRAY), array(array) {}
 
+            DeclaratorWrapper(Function function):
+                kind(WrapperKind::FUNCTION), function(function) {}
+
+            bool is_pointer() {
+                return kind == WrapperKind::POINTERS;
+            }
+
+            bool is_array() {
+                return kind == WrapperKind::ARRAY;
+            }
+
+            bool is_function() {
+                return kind == WrapperKind::FUNCTION;
+            }
+
+            cecko::CKIRConstantIntObs get_array_size() {
+                return array.size;
+            }
+
+            ParameterList get_function_parameters() {
+                return function.parameters;
+            }
+
+            PointerList get_pointers() {
+                return pointers;
+            }
     };
-
-    using d_specs = std::vector<DeclarationSpecifier>;
 
     class Declarator {
         public:
             cecko::CIName name;
             cecko::loc_t line;
-            std::vector<Pointer> pointers;
-            std::vector<Array> arrays;
-            bool is_function;
-            std::vector< std::pair<std::vector<DeclarationSpecifier>, std::vector<Declarator>>> params;
+            DeclaratorWrapperList wrappers;
 
-            Declarator():
-                is_function(false) {}
+            Declarator() {}
 
-            Declarator(cecko::CIName n, cecko::loc_t ln):
-                name(n), line(ln), pointers(), is_function(false), params() {}
+            Declarator(cecko::CIName name, cecko::loc_t line):
+                name(name), line(line) {}
 
+            void register_wrapper(DeclaratorWrapper wrapper) {
+                wrappers.insert(wrappers.begin(), wrapper);
+            }
+
+            DeclaratorWrapperList get_wrappers() {
+                return wrappers;
+            }
     };
 
-    using decls = std::vector<Declarator>;
-
-    class ParameterDeclaration {
+    class Parameter {
         public:
-            d_specs f_specs;
-            decls f_decls;
+            DeclarationSpecifierList specifiers;
+            DeclaratorList declarators;
 
-            ParameterDeclaration():
-                f_specs(), f_decls() {}
+            Parameter() {}
 
-            ParameterDeclaration(d_specs fs, Declarator decl):
-                f_specs(fs), f_decls(decls(1, decl)) {}
+            Parameter(DeclarationSpecifierList specifiers):
+                specifiers(specifiers) {}
+
+            Parameter(DeclarationSpecifierList specifiers, DeclaratorList declarators):
+                specifiers(specifiers), declarators(declarators) {}
+
     };
 
-    class FunctionHeader {
-        public:
-            cecko::CKFunctionSafeObs ret_type;
-            cecko::CKFunctionFormalPackArray pack;
+    // Functions
+    cecko::CKTypeObs get_etype(cecko::context_obs ctx, cecko::gt_etype etype);
+    void create_declarations(cecko::context_obs ctx, DeclarationSpecifierList specifiers, DeclaratorList declarators);
+    void create_function_declaration(cecko::context_obs ctx, DeclarationSpecifierList specifiers, Declarator declarator);
+    cecko::CKTypeObs create_enum(cecko::context_obs ctx, cecko::CIName name, cecko::loc_t line, EnumList enums);
+    cecko::CKStructItemArray process_member(cecko::context_obs ctx, DeclarationSpecifierList specifiers, DeclaratorList declarators);
 
-            FunctionHeader() {};
-
-            FunctionHeader(cecko::CKFunctionSafeObs rt, cecko::CKFunctionFormalPackArray pck):
-                ret_type(rt), pack(pck) {}
-    };
-
-    FunctionHeader create_function_header(cecko::context_obs ctx, d_specs scs, Declarator decl);
-
-    cecko::CKTypeObs get_etype(cecko::gt_etype enum_t, cecko::context_obs ctx);
-
-    void create_declarations(cecko::context_obs ctx, d_specs scs, decls dcs);
-
-    std::vector< std::pair<d_specs, decls>> process_params(std::vector<ParameterDeclaration> params);
-
-    DeclarationSpecifier create_enum(cecko::context_obs ctx, cecko::CIName name, cecko::loc_t line, std::vector<Enum> enums);
 }
 
 #endif
