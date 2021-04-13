@@ -4,6 +4,11 @@ import pickle
 import os
 from typing import Optional
 import torch
+import torchtext
+from torch.nn.utils.rnn import pad_sequence
+from torchtext.data.utils import get_tokenizer
+from collections import Counter
+from torchtext.vocab import Vocab
 from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from pytorch_lightning import LightningDataModule
 from torch.utils.data.dataset import T_co
@@ -16,6 +21,7 @@ PROCESSED_DATA_PATH = os.path.join(DATA_DIR, 'processed_data.npy')
 VOCAB_PATH = os.path.join(DATA_DIR, 'vocab.npy')
 W2I_PATH = os.path.join(DATA_DIR, 'word2index.pickle')
 I2W_PATH = os.path.join(DATA_DIR, 'index2word.pickle')
+
 
 class VaVaIOneHotDataSet(Dataset):
     """
@@ -66,7 +72,7 @@ class VaVaIOneHotDataSet(Dataset):
             selected_columns = data.iloc[:, columns]
             selected_columns = replace_nan_drop_empty(selected_columns, '')
             selected_columns = selected_columns.apply(' '.join, axis=1)
-            selected_columns = selected_columns.iloc[:500]
+            selected_columns = selected_columns[:5000]
 
             for transform in transforms:
                 selected_columns = transform(selected_columns)
@@ -118,39 +124,103 @@ class VaVaIOneHotDataSet(Dataset):
         return tensor
 
     def __getitem__(self, index) -> T_co:
-        index = index.item()
-
-        input = self._coo_to_tensor(self.data[index, 0]).to_dense()
+        input_ = self._coo_to_tensor(self.data[index, 0]).to_dense()
         target = self._coo_to_tensor(self.data[index, 1]).to_dense()
         length = torch.tensor(self.data[index, 2], dtype=torch.int32)
 
-        return input, target, length
+        return input_, target, length
+
+    def __len__(self):
+        return len(self.data)
+
+
+class VaVaITorchTextDataset(Dataset):
+    def __init__(
+            self,
+            csv_file: str,
+            columns: list
+    ):
+        csv_data = pd.read_csv(csv_file)
+        selected_columns = csv_data.iloc[:, columns]
+        selected_columns = replace_nan_drop_empty(selected_columns, '')
+        selected_columns = selected_columns.apply(' '.join, axis=1)
+        selected_columns = selected_columns.iloc[:1000]
+
+        counter = Counter()
+        tokenizer = get_tokenizer('spacy', language='en')
+
+        for string_ in selected_columns:
+            counter.update(tokenizer(string_))
+
+        vavai_vocab = Vocab(counter, specials=['<unk>', '<pad>', '<sos>', '<eos>'])
+
+        raw_data_iter = iter(selected_columns)
+        data = []
+        for raw_data in raw_data_iter:
+            tensor_ = torch.tensor([vavai_vocab[token] for token in tokenizer(raw_data)],
+                                   dtype=torch.long)
+            data.append((tensor_, tensor_))
+
+        self.data = data
+        self.vocab = vavai_vocab
+        self.pad_idx = vavai_vocab['<pad>']
+        self.sos_idx = vavai_vocab['<sos>']
+        self.eos_idx = vavai_vocab['<eos>']
+
+    def __getitem__(self, item):
+        return self.data[item]
 
     def __len__(self):
         return len(self.data)
 
 
 class VaVaIDataModule(LightningDataModule):
-    def __init__(self, dataset=None):
+    def __init__(self, dataset, batch_size):
         super().__init__()
         self.dataset = dataset
+        self.batch_size = batch_size
+        self.collate_fn = None
         self.train_split = None
         self.val_split = None
         self.test_split = None
 
     def prepare_data(self, *args, **kwargs):
-        pass
+        def generate_batch(data_batch):
+            input_batch, target_batch = [], []
+            for (input_item, target_item) in data_batch:
+                input_batch.append(torch.cat([torch.tensor([self.dataset.sos_idx]), input_item,
+                                              torch.tensor([self.dataset.eos_idx])], dim=0))
+                target_batch.append(torch.cat([torch.tensor([self.dataset.sos_idx]), target_item,
+                                               torch.tensor([self.dataset.eos_idx])], dim=0))
+            input_batch = pad_sequence(input_batch, padding_value=self.dataset.pad_idx)
+            target_batch = pad_sequence(target_batch, padding_value=self.dataset.pad_idx)
+            return input_batch, target_batch
+
+        self.collate_fn = generate_batch
 
     def setup(self, stage: Optional[str] = None):
-        indices = torch.randperm(500)
-        dataset = Subset(self.dataset, indices)
-        self.train_split, self.val_split, self.test_split = random_split(dataset, [400, 50, 50])
+        self.train_split, self.val_split, self.test_split = random_split(self.dataset, [800, 100, 100])
 
     def train_dataloader(self):
-        return DataLoader(self.train_split, batch_size=8, num_workers=4, shuffle=True)
+        if self.collate_fn is None:
+            data_loader = DataLoader(self.train_split, batch_size=self.batch_size, num_workers=4, shuffle=True)
+        else:
+            data_loader = DataLoader(self.train_split, batch_size=self.batch_size, num_workers=4, shuffle=True,
+                                     collate_fn=self.collate_fn)
+        return data_loader
 
     def val_dataloader(self):
-        return DataLoader(self.val_split, batch_size=8, num_workers=4, shuffle=False)
+        if self.collate_fn is None:
+            data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=False)
+        else:
+            data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
+                                     collate_fn=self.collate_fn)
+        return data_loader
 
     def test_dataloader(self):
-        return DataLoader(self.test_split, batch_size=8, num_workers=4, shuffle=False)
+        if self.collate_fn is None:
+            data_loader = DataLoader(self.test_split, batch_size=self.batch_size, num_workers=4, shuffle=False)
+        else:
+            data_loader = DataLoader(self.test_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
+                                     collate_fn=self.collate_fn)
+        return data_loader

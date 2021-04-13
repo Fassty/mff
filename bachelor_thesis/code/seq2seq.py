@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 
+from tqdm import tqdm
+
 from torch import nn
 from torch import optim
 from datamodule.prepare_data import tensorsFromPair, tensorFromSentence, prepareData, SOS_token, EOS_token
@@ -94,7 +96,7 @@ def trainIters(encoder, decoder, input_lang, output_lang, pairs, max_len, n_iter
     print(f'Generated {len(training_pairs)} training paris!')
     criterion = nn.NLLLoss()
 
-    for iter in range(1, n_iters + 1):
+    for iter in tqdm(range(1, n_iters + 1)):
         training_pair = training_pairs[iter - 1]
         input_tensor = training_pair[0]
         target_tensor = training_pair[1]
@@ -176,12 +178,12 @@ def evaluateRandomly(encoder, decoder, max_len, n=10):
 
 
 if __name__ == '__main__':
-    input_lang, output_lang, pairs, max_len = prepareData('input', 'output', 'vavai_tab_sep.txt')
+    input_lang, output_lang, pairs, max_len = prepareData('input', 'output', 'vavai_sample.txt')
 
-    encoder = Encoder(input_lang.n_words, 256).to(device)
-    decoder = AttnDecoder(256, output_lang.n_words, max_len, dropout_p=0.1).to(device)
+    encoder = Encoder(input_lang.n_words, 512).to(device)
+    decoder = AttnDecoder(512, output_lang.n_words, max_len, dropout_p=0.1).to(device)
 
-    trainIters(encoder, decoder, input_lang, output_lang, pairs, max_len, 100_000, print_every=1000)
+    trainIters(encoder, decoder, input_lang, output_lang, pairs, max_len, 25000, print_every=5000)
 
     torch.save(encoder, 'encoder.pth')
     torch.save(decoder, 'decoder.pth')

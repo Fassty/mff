@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import re
+import torch
 import nltk
 from nltk.corpus import stopwords
 from scipy.sparse import coo_matrix
@@ -17,7 +18,7 @@ class Lemmatize(object):
         print('Lemmatizing text...')
         def lemmatize_text(sentence):
             return [self.lemmatizer.lemmatize(word) for word in self.tokenizer.tokenize(sentence)]
-        return df.apply(lemmatize_text)
+        return df.swifter.apply(lemmatize_text)
 
 
 class RemoveAccents(object):
@@ -34,7 +35,7 @@ class RemoveAccents(object):
 class RemoveStopwords(object):
     def __init__(self):
         self.stop_words = stopwords.words('english')
-        self.stop_words.extend(['aim', 'project', 'evaluate', 'research', 'improve', 'improvement', 'development'])
+        self.stop_words.extend(['aim', 'goal', 'project', 'evaluate', 'research', 'improve', 'improvement', 'development'])
 
     def __call__(self, df: pd.DataFrame):
         print('Removing stopwords...')
@@ -94,14 +95,16 @@ class ConvertToBagOfWords(object):
             return matrix
 
         print('Converting to CBOW...')
-        tqdm.pandas()
-        df['input'] = df['input'].progress_apply(convert_to_cbow)
-        df['target'] = df['target'].progress_apply(convert_to_cbow)
+        df['input'] = df['input'].swifter.apply(convert_to_cbow)
+        df['target'] = df['target'].swifter.apply(convert_to_cbow)
         df['length'] = df['length'].astype(np.int16)
         return df.to_numpy()
 
 
 def replace_nan_drop_empty(df: pd.DataFrame, replacement: str):
-    df = df.dropna(how='all')
+    df = df.dropna(how='any')
     df = df.fillna(value=replacement)
+    df = df[~(df.apply(''.join, axis=1).str.len() < 10)]
     return df
+
+

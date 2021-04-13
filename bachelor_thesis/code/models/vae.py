@@ -3,6 +3,8 @@ import torch
 import torch.nn.utils.rnn as rnn_utils
 from torch import nn
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class Encoder(nn.Module):
     def __init__(
@@ -55,7 +57,7 @@ class Encoder(nn.Module):
         mu = self.mu(hidden_state)
         log_var = self.log_var(hidden_state)
         std = torch.exp(0.5 * log_var)
-        z = torch.rand([batch_size, self.latent_dim])
+        z = torch.rand([batch_size, self.latent_dim]).type_as(mu)
         z = z * std + mu
         return z, mu, std, sorted_idx, hidden
 
