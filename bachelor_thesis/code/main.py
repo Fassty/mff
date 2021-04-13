@@ -29,7 +29,8 @@ def main():
     #
     # trainer = pl.Trainer(gpus=-1)
     # trainer.fit(model, datamodule=datamodule)
-    dataset = VaVaITorchTextDataset(csv_file='data/TACR_Starfos_isvav_project.csv', columns=[2, 4])
+    dataset = VaVaITorchTextDataset(csv_file='../data/TACR_Starfos_isvav_project.csv',
+                                    columns=[2, 4])
     module = VaVaIDataModule(dataset, batch_size=16)
 
     model = AttnAE(input_dim=len(dataset.vocab),
@@ -40,7 +41,12 @@ def main():
                    dropout=0.5,
                    pad_idx=dataset.vocab.stoi['<pad>'])
 
-    trainer = pl.Trainer()
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor='loss',
+                                                       filename='AttnAE-{epoch:02d}-{loss:.2f}',
+                                                       save_top_k=3,
+                                                       mode='min')
+
+    trainer = pl.Trainer(callbacks=[checkpoint_callback])
     trainer.fit(model, datamodule=module)
 
 

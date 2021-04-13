@@ -217,6 +217,8 @@ class AttnAE(LightningModule):
 
         loss = self.loss(output, target)
 
+        self.log('loss', loss)
+
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -228,6 +230,8 @@ class AttnAE(LightningModule):
         target = target[1:].view(-1)
 
         loss = self.loss(output, target)
+
+        self.log('loss', loss)
 
         return loss
 
