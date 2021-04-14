@@ -29,7 +29,10 @@ class RemoveAccents(object):
             s = re.sub(r"([.!?])", r" \1", s)
             s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
             return s
-        return df.apply(normalizeString)
+
+        df = df[~df.str.contains('ě|š|č|ř|ž|ý|á|í|é|ů|ú|ň|ď|ť')]
+        df = df.apply(normalizeString)
+        return df
 
 
 class RemoveStopwords(object):

@@ -11,19 +11,20 @@ import hydra
 
 def train_vae():
     dataset = VaVaIOneHotDataSet(csv_file='../data/TACR_Starfos_isvav_project.csv',
-                                 columns=[2, 4],
+                                 columns=[20],
+                                 num_samples=10_000,
                                  transforms=[
                                      RemoveAccents(),
                                      Lemmatize(),
                                      RemoveStopwords(),
-                                     TrimSentences(max_len=32),
+                                     TrimSentences(max_len=10),
                                      PadSentences(pad_with='<pad>')
                                  ])
-    datamodule = VaVaIDataModule(dataset=dataset, batch_size=16)
+    datamodule = VaVaIDataModule(dataset=dataset, batch_size=64)
 
     model = VAE(input_dim=dataset.vocab_size,
                 hidden_dim=256,
-                latent_dim=100,
+                latent_dim=50,
                 seq_len=dataset.seq_len,
                 cell_type='lstm',
                 n_layers=1,
@@ -31,12 +32,12 @@ def train_vae():
                 index2word=dataset.index2word,
                 word2index=dataset.word2index)
 
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor='val_loss',
-                                                       filename='RVAE-{epoch:02d}-{loss:.2f}',
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor='val_accuracy',
+                                                       filename='RVAE-{epoch:02d}-{val_accuracy:.2f}',
                                                        save_top_k=3,
-                                                       mode='min')
+                                                       mode='max')
 
-    trainer = pl.Trainer(callbacks=[checkpoint_callback])
+    trainer = pl.Trainer(callbacks=[checkpoint_callback], log_every_n_steps=1, max_epochs=10)
     trainer.fit(model, datamodule=datamodule)
 
 
@@ -65,7 +66,7 @@ def train_attn():
 # TODO: use Hydra to setup experiments
 # @hydra.main(config_name='config.yaml', config_path='config/')
 def main():
-    train_attn()
+    train_vae()
 
 
 if __name__ == '__main__':

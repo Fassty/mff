@@ -62,6 +62,7 @@ class VaVaIOneHotDataSet(Dataset):
             self,
             csv_file: str,
             columns: list,
+            num_samples: int,
             transforms: list
     ):
         if not os.path.exists(PROCESSED_DATA_PATH)\
@@ -72,9 +73,9 @@ class VaVaIOneHotDataSet(Dataset):
             selected_columns = data.iloc[:, columns]
             selected_columns = replace_nan_drop_empty(selected_columns, '')
             selected_columns = selected_columns.apply(' '.join, axis=1)
-            selected_columns = selected_columns[:5000]
+            selected_columns = selected_columns.sample(num_samples)
 
-            for transform in transforms.values():
+            for transform in transforms:
                 selected_columns = transform(selected_columns)
 
             selected_columns.reset_index(inplace=True)

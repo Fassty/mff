@@ -2,6 +2,7 @@ from pytorch_lightning import LightningModule
 import torch
 import torch.nn.utils.rnn as rnn_utils
 from torch import nn
+import numpy as np
 
 
 class Encoder(nn.Module):
@@ -130,7 +131,7 @@ class VAE(LightningModule):
         self.decoder = Decoder(input_dim, hidden_dim, latent_dim, cell_type, n_layers, bidirectional, seq_len)
         self.index2word = index2word
         self.word2index = word2index
-        self.reconstruction_loss = nn.NLLLoss(ignore_index=word2index['<pad>'], reduction='sum')
+        self.reconstruction_loss = nn.NLLLoss(ignore_index=word2index['<pad>'], reduction='mean')
 
     def kl_divergence(self, mean, std):
         """Simplified KL divergence calculation expecting the posterior to be N(0, 1)"""
@@ -144,7 +145,7 @@ class VAE(LightningModule):
 
         vocab_size = log_prob.size(2)
 
-        # convert one-hot encoding to vocabulary indices
+        # convert one-hot encoded targets to vocabulary indices
         target = target.argmax(dim=2).view(-1)
         log_prob = log_prob.view(-1, vocab_size)
 
@@ -162,29 +163,24 @@ class VAE(LightningModule):
         z, mu, std, sorted_idx, hidden = self.encoder(input_, length)
         log_prob = self.decoder(z, sorted_idx, hidden)
 
-        vocab_size = log_prob.size(2)
-        target = target.argmax(dim=2).view(-1)
-        log_prob = log_prob.view(-1, vocab_size)
+        target = target.argmax(dim=2)
+        log_prob = log_prob.argmax(dim=2)
 
-        kl = self.kl_divergence(mu, std) * z.size(1)
-        rloss = self.reconstruction_loss(log_prob, target)
+        accuracies = []
+        for idx, (predicted_sentence_idxs, gold_sentence_idxs) in enumerate(zip(log_prob, target)):
+            gold_sentence = [self.index2word[word_index.item()] for word_index in gold_sentence_idxs
+                             if not word_index == self.word2index['<pad>']]
+            predicted_sentence = [self.index2word[word_index.item()] for idx, word_index in
+                                  enumerate(predicted_sentence_idxs) if idx < len(gold_sentence)]
+            if idx == 0:
+                print(f'\n> {" ".join(gold_sentence)}\n< {" ".join(predicted_sentence)}\n')
+            correct = sum([1 if x == y else 0 for x, y in zip(predicted_sentence, gold_sentence)])
+            accuracy = correct / len(predicted_sentence)
+            accuracies.append(accuracy)
 
-        loss = kl + rloss
-
-        self.log('val_loss', loss)
-        return loss
-
-        # index_max = torch.argmax(reconstruction, dim=2)
-        # gold_index_max = torch.argmax(batch[1], dim=2)
-        # accuracy = 0
-        # for predicted_sentence_idxs, gold_sentence_idxs in zip(index_max, gold_index_max):
-        #     predicted_sentence = [self.index2word[word_index.item()] for word_index in predicted_sentence_idxs]
-        #     gold_sentence = [self.index2word[word_index.item()] for word_index in gold_sentence_idxs]
-        #     correct = sum([1 if x == y else 0 for x, y in zip(predicted_sentence, gold_sentence)])
-        #     accuracy = correct / len(predicted_sentence)
-        #
-        # self.log('val_accuracy', accuracy)
-        # return accuracy
+        accuracy = np.mean(accuracies)
+        self.log('val_accuracy', accuracy)
+        return accuracy
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=0.001)
