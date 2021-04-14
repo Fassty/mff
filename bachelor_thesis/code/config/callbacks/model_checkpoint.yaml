@@ -1,0 +1,5 @@
+_target_: pytorch_lightning.callbacks.ModelCheckpoint
+monitor: val_loss
+filename: RVAE-{epoch:02d}-{loss:.2f}
+save_top_k: 3
+mode: min

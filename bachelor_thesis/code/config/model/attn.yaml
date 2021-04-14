@@ -1,0 +1,6 @@
+_target_: models.seq2seq.AttnAE
+embedding_dim: 256
+hidden_dim: 100
+cell_type: lstm
+n_layers: 1
+bidirectional: True

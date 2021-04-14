@@ -3,8 +3,6 @@ import torch
 import torch.nn.utils.rnn as rnn_utils
 from torch import nn
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 class Encoder(nn.Module):
     def __init__(
@@ -31,29 +29,31 @@ class Encoder(nn.Module):
         self.mu = nn.Linear(in_features=hidden_dim * self.hidden_factor, out_features=latent_dim)
         self.log_var = nn.Linear(in_features=hidden_dim * self.hidden_factor, out_features=latent_dim)
 
-    def forward(self, input_, length):
-        # SORT INPUT BY LENGTH
+    def forward(self, input_, lengths):
+        # sort input sequences by length
         batch_size = input_.size(0)
-        sorted_lengths, sorted_idx = torch.sort(length, descending=True)
+        sorted_lengths, sorted_idx = torch.sort(lengths, descending=True)
         input_ = input_[sorted_idx]
 
-        # REMOVE PADDING
+        # remove padding -> trim sequences by corresponding length
         packed_input = rnn_utils.pack_padded_sequence(input_, sorted_lengths.data.tolist(), batch_first=True)
 
-        # ENCODE
+        # get the last hidden state of the encoder RNN
         _, hidden = self.rnn(packed_input)
 
-        # PROCESS LSTM OUTPUT
+        # process LSTM output
         if self.cell_type == 'lstm':
+            # return last hidden state of last layer
             hidden_state, cell_state = hidden
             hidden_state = hidden_state.view(self.n_layers, (self.bidirectional + 1), batch_size, self.hidden_dim)
             hidden_state = hidden_state[-1]
+            # concat forward and backward output for bidirectional RNN
             hidden_states = [hidden_state[i] for i in range(self.bidirectional + 1)]
             hidden_state = torch.cat(hidden_states, dim=1)
         else:
             hidden_state = hidden
 
-        # REPARAMETRIZE
+        # reparametrize
         mu = self.mu(hidden_state)
         log_var = self.log_var(hidden_state)
         std = torch.exp(0.5 * log_var)
@@ -86,20 +86,28 @@ class Decoder(nn.Module):
         self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, z, sorted_idx, hidden):
+        # repeat encoded latent variable for each word in input sequence
         input_ = z.unsqueeze(1).repeat(1, self.seq_len, 1)
 
-        # PROCESS EMBEDDING
+        # decode sampled latent variable
         output, hidden = self.rnn(input_)
 
-        # PROJECT OUTPUT BACK TO VOCABULARY
+        # order data in memory
         output = output.contiguous()
+
+        # reorder data back to their original ordering
         _, reversed_idx = torch.sort(sorted_idx)
         output = output[reversed_idx]
+
+        # flatten RNN output
         batch_size, seq_len, hidden_size = output.size()
         output = output.view(-1, hidden_size)
 
+        # project outputs back to vocabulary -> calculate probabilities
         fc_output = self.fc(output)
         log_prob = self.softmax(fc_output)
+
+        # reshape to match the dimensions of input
         log_prob = log_prob.view(batch_size, seq_len, -1)
         return log_prob
 
@@ -135,13 +143,17 @@ class VAE(LightningModule):
         log_prob = self.decoder(z, sorted_idx, hidden)
 
         vocab_size = log_prob.size(2)
+
+        # convert one-hot encoding to vocabulary indices
         target = target.argmax(dim=2).view(-1)
         log_prob = log_prob.view(-1, vocab_size)
 
+        # kl divergence weighted by the sequence length
         kl = self.kl_divergence(mu, std) * z.size(1)
         rloss = self.reconstruction_loss(log_prob, target)
 
         loss = kl + rloss
+        self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -158,6 +170,8 @@ class VAE(LightningModule):
         rloss = self.reconstruction_loss(log_prob, target)
 
         loss = kl + rloss
+
+        self.log('val_loss', loss)
         return loss
 
         # index_max = torch.argmax(reconstruction, dim=2)

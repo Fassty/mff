@@ -16,7 +16,7 @@ import scipy.sparse
 
 from datamodule.utils import ConvertToBagOfWords, replace_nan_drop_empty
 
-DATA_DIR = os.path.join('data', 'vae_processed')
+DATA_DIR = os.path.join('/home/fassty/Devel/mff/bachelor_thesis/code/data', 'vae_processed')
 PROCESSED_DATA_PATH = os.path.join(DATA_DIR, 'processed_data.npy')
 VOCAB_PATH = os.path.join(DATA_DIR, 'vocab.npy')
 W2I_PATH = os.path.join(DATA_DIR, 'word2index.pickle')
@@ -74,22 +74,17 @@ class VaVaIOneHotDataSet(Dataset):
             selected_columns = selected_columns.apply(' '.join, axis=1)
             selected_columns = selected_columns[:5000]
 
-            for transform in transforms:
+            for transform in transforms.values():
                 selected_columns = transform(selected_columns)
 
             selected_columns.reset_index(inplace=True)
             selected_columns.drop(columns='index', inplace=True)
             self.vocab = sorted(list(set(' '.join(selected_columns['input'].apply(' '.join)).split() + ['<eos>'])))
-            self.vocab_size = len(self.vocab)
             self.word2index = dict()
             self.index2word = dict()
             for index, word in enumerate(self.vocab):
                 self.word2index[word] = index
                 self.index2word[index] = word
-
-            self.sos_idx = self.word2index['<sos>']
-            self.eos_idx = self.word2index['<eos>']
-            self.pad_idx = self.word2index['<pad>']
 
             selected_columns = ConvertToBagOfWords()(selected_columns, self.word2index)
             self.data = selected_columns
@@ -104,17 +99,12 @@ class VaVaIOneHotDataSet(Dataset):
         else:
             self.data = np.load(PROCESSED_DATA_PATH, allow_pickle=True)
             self.vocab = np.load(VOCAB_PATH, allow_pickle=True)
-            self.vocab_size = len(self.vocab)
             self.seq_len = self.data[0][0].shape[0]
 
             with open(W2I_PATH, 'rb') as handle:
                 self.word2index = pickle.load(handle)
             with open(I2W_PATH, 'rb') as handle:
                 self.index2word = pickle.load(handle)
-
-            self.sos_idx = self.word2index['<sos>']
-            self.eos_idx = self.word2index['<eos>']
-            self.pad_idx = self.word2index['<pad>']
 
     def _coo_to_tensor(self, coo: scipy.sparse.coo_matrix):
         values = torch.FloatTensor(coo.data)
@@ -132,6 +122,28 @@ class VaVaIOneHotDataSet(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+    def get_index(self, word):
+        return self.word2index[word]
+
+    def get_word(self, index):
+        return self.index2word[index]
+
+    @property
+    def vocab_size(self):
+        return len(self.vocab)
+
+    @property
+    def pad_idx(self):
+        return self.word2index['<pad>']
+
+    @property
+    def sos_idx(self):
+        return self.word2index['<sos>']
+
+    @property
+    def eos_idx(self):
+        return self.word2index['<eos>']
 
 
 class VaVaITorchTextDataset(Dataset):
@@ -163,9 +175,6 @@ class VaVaITorchTextDataset(Dataset):
 
         self.data = data
         self.vocab = vavai_vocab
-        self.pad_idx = vavai_vocab['<pad>']
-        self.sos_idx = vavai_vocab['<sos>']
-        self.eos_idx = vavai_vocab['<eos>']
 
     def __getitem__(self, item):
         return self.data[item]
@@ -173,54 +182,64 @@ class VaVaITorchTextDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
+    @property
+    def vocab_size(self):
+        return len(self.vocab)
+
+    @property
+    def pad_idx(self):
+        return self.vocab['<pad>']
+
+    @property
+    def sos_idx(self):
+        return self.vocab['<sos>']
+
+    @property
+    def eos_idx(self):
+        return self.vocab['<eos>']
+
+    def generate_batch(self, data_batch):
+        input_batch, target_batch = [], []
+        for (input_item, target_item) in data_batch:
+            input_batch.append(torch.cat([torch.tensor([self.sos_idx]), input_item,
+                                          torch.tensor([self.eos_idx])], dim=0))
+            target_batch.append(torch.cat([torch.tensor([self.sos_idx]), target_item,
+                                           torch.tensor([self.eos_idx])], dim=0))
+        input_batch = pad_sequence(input_batch, padding_value=self.pad_idx)
+        target_batch = pad_sequence(target_batch, padding_value=self.pad_idx)
+        return input_batch, target_batch
+
 
 class VaVaIDataModule(LightningDataModule):
     def __init__(self, dataset, batch_size):
         super().__init__()
         self.dataset = dataset
         self.batch_size = batch_size
-        self.collate_fn = None
+        self.collate_fn = dataset.generate_batch if hasattr(dataset, 'generate_batch') else None
         self.train_split = None
         self.val_split = None
         self.test_split = None
 
     def prepare_data(self, *args, **kwargs):
-        def generate_batch(data_batch):
-            input_batch, target_batch = [], []
-            for (input_item, target_item) in data_batch:
-                input_batch.append(torch.cat([torch.tensor([self.dataset.sos_idx]), input_item,
-                                              torch.tensor([self.dataset.eos_idx])], dim=0))
-                target_batch.append(torch.cat([torch.tensor([self.dataset.sos_idx]), target_item,
-                                               torch.tensor([self.dataset.eos_idx])], dim=0))
-            input_batch = pad_sequence(input_batch, padding_value=self.dataset.pad_idx)
-            target_batch = pad_sequence(target_batch, padding_value=self.dataset.pad_idx)
-            return input_batch, target_batch
-
-        self.collate_fn = generate_batch
+        pass
 
     def setup(self, stage: Optional[str] = None):
-        self.train_split, self.val_split, self.test_split = random_split(self.dataset, [800, 100, 100])
+        train = int(len(self.dataset) * 0.8)
+        val = (len(self.dataset) - train) // 2
+        test = len(self.dataset) - (val + train)
+        self.train_split, self.val_split, self.test_split = random_split(self.dataset, [train, val, test])
 
     def train_dataloader(self):
-        if self.collate_fn is None:
-            data_loader = DataLoader(self.train_split, batch_size=self.batch_size, num_workers=4, shuffle=True)
-        else:
-            data_loader = DataLoader(self.train_split, batch_size=self.batch_size, num_workers=4, shuffle=True,
-                                     collate_fn=self.collate_fn)
+        data_loader = DataLoader(self.train_split, batch_size=self.batch_size, num_workers=4, shuffle=True,
+                                 collate_fn=self.collate_fn)
         return data_loader
 
     def val_dataloader(self):
-        if self.collate_fn is None:
-            data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=False)
-        else:
-            data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
-                                     collate_fn=self.collate_fn)
+        data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
+                                 collate_fn=self.collate_fn)
         return data_loader
 
     def test_dataloader(self):
-        if self.collate_fn is None:
-            data_loader = DataLoader(self.test_split, batch_size=self.batch_size, num_workers=4, shuffle=False)
-        else:
-            data_loader = DataLoader(self.test_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
-                                     collate_fn=self.collate_fn)
+        data_loader = DataLoader(self.test_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
+                                 collate_fn=self.collate_fn)
         return data_loader

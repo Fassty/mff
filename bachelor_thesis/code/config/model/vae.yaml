@@ -1,0 +1,6 @@
+_target_: models.vae.VAE
+hidden_dim: 256
+latent_dim: 100
+cell_type: lstm
+n_layers: 1
+bidirectional: True

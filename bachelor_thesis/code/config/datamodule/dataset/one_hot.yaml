@@ -1,0 +1,18 @@
+_target_: datamodule.vavai_datamodule.VaVaIOneHotDataSet
+csv_file: ../data/TACR_Starfos_isvav_project.csv
+columns:
+  - 2
+  - 4
+transforms:
+  remove_accents:
+    _target_: datamodule.utils.RemoveAccents
+  lemmatize:
+    _target_: datamodule.utils.Lemmatize
+  remove_stopwords:
+    _target_: datamodule.utils.RemoveStopwords
+  trim_sentences:
+    _target_: datamodule.utils.TrimSentences
+    max_len: 32
+  pad_sentences:
+    _target_: datamodule.utils.PadSentences
+    pad_with: "<pad>"
