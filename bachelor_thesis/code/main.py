@@ -3,7 +3,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from datamodule.vavai_datamodule import VaVaIDataModule, VaVaIOneHotDataSet, VaVaITorchTextDataset
-from models.seq2seq import AttnAE
+from models.attn import AttnAE
 from models.vae import VAE
 from datamodule.utils import RemoveAccents, RemoveStopwords, Lemmatize, TrimSentences, PadSentences, ConvertToBagOfWords
 import hydra
