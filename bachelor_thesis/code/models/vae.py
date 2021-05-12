@@ -20,7 +20,7 @@ class Encoder(nn.Module):
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
-        self.hidden_factor = (bidirectional + 1) * n_layers
+        self.hidden_factor = (bidirectional + 1)
         self.cell_type = cell_type
 
         self.rnn = getattr(nn, cell_type.upper())(
@@ -78,7 +78,7 @@ class Decoder(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.seq_len = seq_len
-        self.hidden_factor = (bidirectional + 1) * n_layers
+        self.hidden_factor = (bidirectional + 1)
 
         self.rnn = getattr(nn, cell_type.upper())(
             latent_dim, hidden_dim, num_layers=n_layers, bidirectional=bidirectional, batch_first=True

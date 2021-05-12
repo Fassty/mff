@@ -14,9 +14,9 @@ from pytorch_lightning import LightningDataModule
 from torch.utils.data.dataset import T_co
 import scipy.sparse
 
-from datamodule.utils import ConvertToBagOfWords, replace_nan_drop_empty
+from datamodule.utils import ConvertToBagOfWords, replace_nan_drop_empty, RemoveAccents, RemoveStopwords
 
-DATA_DIR = os.path.join('/home/fassty/Devel/mff/bachelor_thesis/code/data', 'vae_processed')
+DATA_DIR = os.path.join('/home/fassty/Devel/programming/python/thesis/mff/bachelor_thesis/code/data', 'vae_processed')
 PROCESSED_DATA_PATH = os.path.join(DATA_DIR, 'processed_data.npy')
 VOCAB_PATH = os.path.join(DATA_DIR, 'vocab.npy')
 W2I_PATH = os.path.join(DATA_DIR, 'word2index.pickle')
@@ -62,7 +62,7 @@ class VaVaIOneHotDataSet(Dataset):
             self,
             csv_file: str,
             columns: list,
-            num_samples: int,
+            num_samples: Optional[int],
             transforms: list
     ):
         if not os.path.exists(PROCESSED_DATA_PATH)\
@@ -73,7 +73,8 @@ class VaVaIOneHotDataSet(Dataset):
             selected_columns = data.iloc[:, columns]
             selected_columns = replace_nan_drop_empty(selected_columns, '')
             selected_columns = selected_columns.apply(' '.join, axis=1)
-            selected_columns = selected_columns.sample(num_samples)
+            if num_samples is not None:
+                selected_columns = selected_columns.sample(num_samples)
 
             for transform in transforms:
                 selected_columns = transform(selected_columns)
@@ -151,13 +152,19 @@ class VaVaITorchTextDataset(Dataset):
     def __init__(
             self,
             csv_file: str,
-            columns: list
+            columns: list,
+            field: str
     ):
         csv_data = pd.read_csv(csv_file)
+        #csv_data = csv_data[csv_data['Hlavní CEP obor'] == field]
         selected_columns = csv_data.iloc[:, columns]
         selected_columns = replace_nan_drop_empty(selected_columns, '')
         selected_columns = selected_columns.apply(' '.join, axis=1)
-        selected_columns = selected_columns.iloc[:1000]
+
+        selected_columns = RemoveAccents()(selected_columns)
+        selected_columns = selected_columns.apply(str.split)
+        selected_columns = RemoveStopwords()(selected_columns)
+        selected_columns = selected_columns.apply(' '.join)
 
         counter = Counter()
         tokenizer = get_tokenizer('spacy', language='en')
@@ -165,7 +172,7 @@ class VaVaITorchTextDataset(Dataset):
         for string_ in selected_columns:
             counter.update(tokenizer(string_))
 
-        vavai_vocab = Vocab(counter, specials=['<unk>', '<pad>', '<sos>', '<eos>'])
+        vavai_vocab = Vocab(counter, specials=['<sos>', '<unk>', '<pad>', '<eos>'])
 
         raw_data_iter = iter(selected_columns)
         data = []
@@ -232,15 +239,15 @@ class VaVaIDataModule(LightningDataModule):
 
     def train_dataloader(self):
         data_loader = DataLoader(self.train_split, batch_size=self.batch_size, num_workers=4, shuffle=True,
-                                 collate_fn=self.collate_fn)
+                                 collate_fn=self.collate_fn, pin_memory=True)
         return data_loader
 
     def val_dataloader(self):
-        data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
-                                 collate_fn=self.collate_fn)
+        data_loader = DataLoader(self.val_split, batch_size=self.batch_size, num_workers=4, shuffle=True,
+                                 collate_fn=self.collate_fn, pin_memory=True)
         return data_loader
 
     def test_dataloader(self):
         data_loader = DataLoader(self.test_split, batch_size=self.batch_size, num_workers=4, shuffle=False,
-                                 collate_fn=self.collate_fn)
+                                 collate_fn=self.collate_fn, pin_memory=True)
         return data_loader

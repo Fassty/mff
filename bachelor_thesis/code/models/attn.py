@@ -7,6 +7,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 from torch import Tensor
+import torchmetrics
 
 
 class Encoder(nn.Module):
@@ -164,12 +165,11 @@ class Seq2Seq(nn.Module):
         max_len = trg.shape[0]
         trg_vocab_size = self.decoder.output_dim
 
-        outputs = torch.zeros(max_len, batch_size, trg_vocab_size)
-
         encoder_outputs, hidden = self.encoder(src)
 
         # first input to the decoder is the <sos> token
         output = trg[0, :]
+        outputs = torch.zeros(max_len, batch_size, trg_vocab_size).type_as(encoder_outputs)
 
         for t in range(1, max_len):
             output, hidden = self.decoder(output, hidden, encoder_outputs)
@@ -190,13 +190,17 @@ class AttnAE(LightningModule):
             hidden_dim,
             attention_dim,
             dropout,
-            pad_idx
+            pad_idx,
+            vocab
     ):
         super().__init__()
+        self.save_hyperparameters('input_dim', 'output_dim', 'embedding_dim', 'hidden_dim', 'attention_dim', 'dropout')
         self.encoder = Encoder(input_dim, embedding_dim, hidden_dim, hidden_dim, dropout)
         self.attn = Attention(hidden_dim, hidden_dim, attention_dim)
         self.decoder = Decoder(output_dim, embedding_dim, hidden_dim, hidden_dim, dropout, self.attn)
         self.model = Seq2Seq(self.encoder, self.decoder)
+        self.vocab = vocab
+        self.pad_idx = pad_idx
 
         # Init weights
         for name, param in self.model.named_parameters():
@@ -206,11 +210,14 @@ class AttnAE(LightningModule):
                 nn.init.constant_(param.data, 0)
 
         self.loss = nn.CrossEntropyLoss(ignore_index=pad_idx)
+        self.accuracy = torchmetrics.Accuracy(ignore_index=pad_idx)
 
     def training_step(self, batch, batch_idx):
         input_, target = batch
 
-        output = self.model(input_, target)
+        tf = 1 * max(((200 - self.current_epoch) / 200), 0.05)
+        self.model.train(True)
+        output = self.model(input_, target, tf)
 
         output = output[1:].view(-1, output.shape[-1])
         target = target[1:].view(-1)
@@ -218,22 +225,38 @@ class AttnAE(LightningModule):
         loss = self.loss(output, target)
 
         self.log('loss', loss)
+        self.log('teacher-force', tf, prog_bar=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
         input_, target = batch
 
+        self.model.eval()
         output = self.model(input_, target, 0)
+        ot = output[1:].view(-1, output.shape[-1])
+        tg = target[1:].view(-1)
 
-        output = output[1:].view(-1, output.shape[-1])
-        target = target[1:].view(-1)
+        val_loss = self.loss(ot, tg)
 
-        loss = self.loss(output, target)
+        output = output.permute(1, 0, 2)
+        target = target.permute(1, 0)
+        predicted_words = output.argmax(dim=2)
 
-        self.log('loss', loss)
+        accs = []
+        for idx, (gold, pred) in enumerate(zip(target, predicted_words)):
+            gold_sentence = [self.vocab.itos[i] for i in gold[1:] if i != self.pad_idx]
+            predicted_sentence = [self.vocab.itos[i] for id_, i in enumerate(pred[1:]) if id_ < len(gold_sentence)]
+            if idx == 0:
+                print(f'\n> {" ".join(gold_sentence)}\n< {" ".join(predicted_sentence)}\n')
+            accs.append(self.accuracy(gold[1:len(gold_sentence)], pred[1:len(predicted_sentence)]))
 
-        return loss
+        acc = torch.mean(torch.tensor(accs))
+
+        self.log('val_acc', acc, prog_bar=True)
+        self.log('val_loss', val_loss, prog_bar=True)
+
+        return acc
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=0.001)

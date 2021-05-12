@@ -38,7 +38,7 @@ class RemoveAccents(object):
 class RemoveStopwords(object):
     def __init__(self):
         self.stop_words = stopwords.words('english')
-        self.stop_words.extend(['aim', 'goal', 'project', 'evaluate', 'research', 'improve', 'improvement', 'development'])
+        self.stop_words.extend(['aim', 'goal', 'project', 'evaluate', 'research', 'improve', 'improvement', 'development', 'infrastructure'])
 
     def __call__(self, df: pd.DataFrame):
         print('Removing stopwords...')
