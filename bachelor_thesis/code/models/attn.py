@@ -247,8 +247,8 @@ class AttnAE(LightningModule):
         for idx, (gold, pred) in enumerate(zip(target, predicted_words)):
             gold_sentence = [self.vocab.itos[i] for i in gold[1:] if i != self.pad_idx]
             predicted_sentence = [self.vocab.itos[i] for id_, i in enumerate(pred[1:]) if id_ < len(gold_sentence)]
-            if idx == 0:
-                print(f'\n> {" ".join(gold_sentence)}\n< {" ".join(predicted_sentence)}\n')
+            #if idx == 0:
+            print(f'\n> {" ".join(gold_sentence)}\n< {" ".join(predicted_sentence)}\n')
             accs.append(self.accuracy(gold[1:len(gold_sentence)], pred[1:len(predicted_sentence)]))
 
         acc = torch.mean(torch.tensor(accs))

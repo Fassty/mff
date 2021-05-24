@@ -14,7 +14,7 @@ import hydra
 def train_vae():
     dataset = VaVaIOneHotDataSet(csv_file='../data/TACR_Starfos_isvav_project.csv',
                                  columns=[20],
-                                 num_samples=None,
+                                 num_samples=100,
                                  transforms=[
                                      RemoveAccents(),
                                      Lemmatize(),
@@ -39,7 +39,8 @@ def train_vae():
                                                        save_top_k=3,
                                                        mode='max')
 
-    trainer = pl.Trainer(callbacks=[checkpoint_callback], log_every_n_steps=1, max_epochs=250)
+    checkpoint_path = 'lightning_logs/rvae_kwords_0.13_acc/checkpoints/RVAE-epoch=07-val_accuracy=0.13.ckpt'
+    trainer = pl.Trainer(callbacks=[checkpoint_callback], log_every_n_steps=1, max_epochs=10, resume_from_checkpoint=checkpoint_path)
     trainer.fit(model, datamodule=datamodule)
 
 
@@ -51,9 +52,9 @@ def train_attn():
 
     model = AttnAE(input_dim=len(dataset.vocab),
                    output_dim=len(dataset.vocab),
-                   embedding_dim=20,
-                   hidden_dim=128,
-                   attention_dim=16,
+                   embedding_dim=50,
+                   hidden_dim=256,
+                   attention_dim=64,
                    dropout=0.3,
                    pad_idx=dataset.vocab.stoi['<pad>'],
                    vocab=dataset.vocab)
@@ -62,8 +63,8 @@ def train_attn():
                                                        filename='AttnAE-{epoch:02d}-{val_acc:.2f}',
                                                        save_top_k=3,
                                                        mode='max')
-    #checkpoint_path = 'lightning_logs/attn_ae_all_kwords_shortrun/checkpoints/AttnAE-epoch=02-val_loss=6.30.ckpt'
-    trainer = pl.Trainer(callbacks=[checkpoint_callback], max_epochs=250)
+    checkpoint_path = 'lightning_logs/attn_ae_all_kwords_shortrun/checkpoints/AttnAE-epoch=02-val_loss=6.30.ckpt'
+    trainer = pl.Trainer(callbacks=[checkpoint_callback], max_epochs=250, resume_from_checkpoint=checkpoint_path)
     trainer.fit(model, datamodule=module)
 
 
@@ -87,8 +88,8 @@ def predict():
 # TODO: use Hydra to setup experiments
 # @hydra.main(config_name='config.yaml', config_path='config/')
 def main():
-    train_vae()
-    #train_attn()
+    #train_vae()
+    train_attn()
     #predict()
 
 
